@@ -386,6 +386,203 @@ export async function withdrawStealthFunds(
 }
 
 // -----------------------------------------------------------------------------
+// Withdrawal status (for live UI feedback)
+// -----------------------------------------------------------------------------
+
+export type WithdrawalStepTag = "CALC" | "SIGN" | "SEND" | "DONE";
+
+export type WithdrawalStatus = {
+  tag: WithdrawalStepTag;
+  label: string;
+  detail?: string;
+};
+
+export type WithdrawalStatusCallback = (status: WithdrawalStatus) => void;
+
+// -----------------------------------------------------------------------------
+// executeStealthWithdrawal: gas-aware sweep (max spendable = balance - gas)
+// -----------------------------------------------------------------------------
+/**
+ * Sweeps the full spendable balance from a stealth address to a destination.
+ * Gas is paid by the stealth address; the sendable amount is balance minus total gas cost.
+ *
+ * Math:
+ *   TotalGasCost = GasLimit × GasPrice (or GasLimit × maxFeePerGas for EIP-1559)
+ *   SendableAmount = StealthBalance - TotalGasCost
+ *
+ * @param stealthPrivKey - Hex string of the 32-byte stealth private key (0x…)
+ * @param destinationAddress - Where to send the ETH
+ * @param publicClient - Viem public client for the chain
+ * @param onStatus - Optional callback for live UI steps ([ CALC ], [ SIGN ], [ SEND ], [ DONE ])
+ * @returns Transaction hash
+ */
+export async function executeStealthWithdrawal(
+  stealthPrivKey: Hex,
+  destinationAddress: Address,
+  publicClient: PublicClient,
+  onStatus?: WithdrawalStatusCallback
+): Promise<Hash> {
+  const report = (tag: WithdrawalStepTag, label: string, detail?: string) => {
+    onStatus?.({ tag, label, detail });
+  };
+
+  const normalizedKey = (stealthPrivKey.startsWith("0x") ? stealthPrivKey : `0x${stealthPrivKey}`) as Hex;
+  const account = privateKeyToAccount(normalizedKey);
+
+  const chain = publicClient.chain;
+  const rpcUrl = chain?.rpcUrls?.default?.http?.[0];
+  if (!rpcUrl) {
+    throw new Error("Cannot send transaction: no RPC URL on public client chain");
+  }
+
+  report("CALC", "Reconstructing one-time private key from vault…");
+  // Account already derived above; this step is logical (key is ready for signing)
+  report("CALC", "Estimating network gas requirements…");
+
+  const balance = await publicClient.getBalance({ address: account.address });
+  if (balance === 0n) {
+    throw new Error("Insufficient funds to cover gas fees.");
+  }
+
+  let gasLimit: bigint;
+  try {
+    gasLimit = await publicClient.estimateGas({
+      account: account.address,
+      to: destinationAddress,
+      value: 1n, // Gas for simple ETH transfer is independent of value
+      data: "0x",
+    });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    throw new Error(`Gas estimation failed: ${msg}`);
+  }
+
+  type Eip1559Fees = { maxFeePerGas: bigint; maxPriorityFeePerGas: bigint };
+  let gasPriceWei: bigint;
+  let eip1559Fees: Eip1559Fees | null = null;
+  try {
+    const fees = await publicClient.estimateFeesPerGas().catch(() => null);
+    if (fees && "maxFeePerGas" in fees && fees.maxFeePerGas != null) {
+      gasPriceWei = fees.maxFeePerGas;
+      eip1559Fees = fees as Eip1559Fees;
+    } else {
+      gasPriceWei = await publicClient.getGasPrice();
+    }
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    throw new Error(`Failed to fetch gas price: ${msg}`);
+  }
+
+  const totalGasCost = gasLimit * gasPriceWei;
+  if (totalGasCost >= balance) {
+    throw new Error("Insufficient funds to cover gas fees.");
+  }
+  const sendableAmount = balance - totalGasCost;
+  const gasEth = formatEther(totalGasCost);
+  const sendEth = formatEther(sendableAmount);
+
+  report("CALC", `Optimizing transaction value: Deducting ${gasEth} ETH for gas.`, `Sending ${sendEth} ETH to destination`);
+
+  report("SIGN", "Signing transaction with ephemeral stealth key…");
+
+  const walletClient = createWalletClient({
+    account,
+    chain: chain ?? undefined,
+    transport: http(rpcUrl),
+  });
+
+  report("SEND", "Broadcasting to network via stealth address [0x…]", account.address);
+
+  const txRequest = {
+    account,
+    to: destinationAddress,
+    value: sendableAmount,
+    data: "0x" as const,
+    gas: gasLimit,
+    ...(eip1559Fees
+      ? { maxFeePerGas: eip1559Fees.maxFeePerGas, maxPriorityFeePerGas: eip1559Fees.maxPriorityFeePerGas }
+      : { gasPrice: gasPriceWei }),
+  };
+
+  let hash: Hash;
+  try {
+    hash = await walletClient.sendTransaction(txRequest);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (msg.includes("reject") || msg.includes("denied") || msg.includes("User")) {
+      throw new Error("User rejected signature.");
+    }
+    throw new Error(`Transaction failed: ${msg}`);
+  }
+
+  report("DONE", "Funds successfully swept to [Destination].", destinationAddress);
+  console.log("📤 [Opaque] Stealth withdrawal tx sent ✅", { hash, from: account.address.slice(0, 14) + "…", to: destinationAddress.slice(0, 14) + "…" });
+  return hash;
+}
+
+// -----------------------------------------------------------------------------
+// claimStealthFunds: transfer from derived one-time key to destination
+// -----------------------------------------------------------------------------
+/**
+ * Sends ETH from a stealth address to a destination. The transaction is signed
+ * by the one-time stealth private key so the on-chain "from" is the stealth
+ * address itself, preserving unlinkability.
+ *
+ * For sweeping the full balance with gas deduction, use executeStealthWithdrawal instead.
+ *
+ * @param stealthPrivateKey - Hex string of the 32-byte stealth private key (0x…)
+ *   derived in the previous step; must correspond to the stealth address holding the funds.
+ * @param amount - Amount in wei to transfer
+ * @param toAddress - Destination address (e.g. a fresh wallet; avoid connected wallet to preserve privacy)
+ * @param publicClient - Viem public client for the chain
+ * @returns Transaction hash
+ */
+export async function claimStealthFunds(
+  stealthPrivateKey: Hex,
+  amount: bigint,
+  toAddress: Address,
+  publicClient: PublicClient
+): Promise<Hash> {
+  const normalizedKey = (stealthPrivateKey.startsWith("0x") ? stealthPrivateKey : `0x${stealthPrivateKey}`) as Hex;
+  const account = privateKeyToAccount(normalizedKey);
+
+  const chain = publicClient.chain;
+  const rpcUrl = chain?.rpcUrls?.default?.http?.[0];
+  if (!rpcUrl) {
+    throw new Error("Cannot send transaction: no RPC URL on public client chain");
+  }
+
+  const balance = await publicClient.getBalance({ address: account.address });
+  const gasEstimate = await publicClient.estimateGas({
+    account: account.address,
+    to: toAddress,
+    value: amount,
+  });
+  const gasCost = gasEstimate * (await publicClient.getGasPrice());
+  if (balance < amount + gasCost) {
+    throw new Error(
+      "Insufficient Gas. Please fund this stealth address from a neutral source (like an exchange) to maintain privacy."
+    );
+  }
+
+  const walletClient = createWalletClient({
+    account,
+    chain: chain ?? undefined,
+    transport: http(rpcUrl),
+  });
+
+  const hash = await walletClient.sendTransaction({
+    account,
+    to: toAddress,
+    value: amount,
+    gas: gasEstimate,
+  });
+
+  console.log("📤 [Opaque] Claim tx sent ✅", { hash, from: account.address.slice(0, 14) + "…", to: toAddress.slice(0, 14) + "…" });
+  return hash;
+}
+
+// -----------------------------------------------------------------------------
 // Helpers
 // -----------------------------------------------------------------------------
 

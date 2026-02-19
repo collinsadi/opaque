@@ -1,13 +1,17 @@
 /**
  * React hook for loading and using the Opaque Cash WASM module.
  * 
- * Dynamically imports the WASM module and provides access to Rust functions:
+ * Uses ES module import (via vite-plugin-wasm + vite-plugin-top-level-await)
+ * and provides access to Rust functions:
  * - derive_stealth_address_wasm
  * - check_announcement_wasm
  * - check_announcement_view_tag_wasm
  */
 
 import { useEffect, useState } from 'react';
+
+// ES module import — Vite serves and processes this via the WASM plugins
+import init, * as wasmModule from '@wasm/cryptography.js';
 
 // Type definitions for WASM module exports
 export interface OpaqueWasmModule {
@@ -47,18 +51,18 @@ interface UseOpaqueWasmReturn {
 
 /**
  * React hook that loads the Opaque Cash WASM module.
- * 
- * @param wasmPath - Path to the WASM module (default: '/pkg/cryptography.js')
+ * Uses ES module import; init() is called in useEffect so isReady is true only after init resolves.
+ *
  * @returns Object containing the WASM module, loading state, error, and ready flag
- * 
+ *
  * @example
  * ```tsx
  * const { wasm, loading, error, isReady } = useOpaqueWasm();
- * 
+ *
  * if (loading) return <div>Loading WASM...</div>;
  * if (error) return <div>Error: {error.message}</div>;
  * if (!isReady) return null;
- * 
+ *
  * const result = wasm.derive_stealth_address_wasm(
  *   viewKey,
  *   spendPubKey,
@@ -66,7 +70,7 @@ interface UseOpaqueWasmReturn {
  * );
  * ```
  */
-export function useOpaqueWasm(wasmPath: string = '/pkg/cryptography.js'): UseOpaqueWasmReturn {
+export function useOpaqueWasm(): UseOpaqueWasmReturn {
   const [wasm, setWasm] = useState<OpaqueWasmModule | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
@@ -74,50 +78,44 @@ export function useOpaqueWasm(wasmPath: string = '/pkg/cryptography.js'): UseOpa
   useEffect(() => {
     let cancelled = false;
 
-    async function loadWasm() {
+    (async () => {
       try {
-        console.log("📦 [Opaque] Loading WASM…", { path: wasmPath });
         setLoading(true);
         setError(null);
+        setWasm(null);
 
-        // Dynamic import of the WASM module
-        // wasm-pack generates a default export that initializes the module
-        const wasmModule = await import(/* @vite-ignore */ wasmPath);
-        
-        // Initialize the WASM module
-        // The default export from wasm-pack is the init function
-        if (wasmModule.default) {
-          await wasmModule.default();
-        }
+        // Must call default (async init) before any Rust functions; loads .wasm into memory
+        await init();
 
-        if (!cancelled) {
-          // After initialization, the functions are available on the module
-          setWasm(wasmModule as unknown as OpaqueWasmModule);
-          setLoading(false);
-          console.log("📦 [Opaque] WASM loaded ✅");
-        }
+        if (cancelled) return;
+
+        console.log("✅ [Opaque] WASM binary initialized via Vite plugin");
+        setWasm(wasmModule as unknown as OpaqueWasmModule);
+        setLoading(false);
       } catch (err) {
         if (!cancelled) {
-          const error = err instanceof Error ? err : new Error(String(err));
-          setError(error);
+          const e = err instanceof Error ? err : new Error(String(err));
+          setError(e);
+          setWasm(null);
           setLoading(false);
-          console.error("⚠️ [Opaque] WASM load failed:", error);
+          console.error("⚠️ [Opaque] WASM load failed:", e);
         }
       }
-    }
-
-    loadWasm();
+    })();
 
     return () => {
       cancelled = true;
     };
-  }, [wasmPath]);
+  }, []);
+
+  // isReady is true only when init() has resolved and .wasm is in memory
+  const isReady = Boolean(wasm !== null && !loading && error === null);
 
   return {
     wasm,
     loading,
     error,
-    isReady: wasm !== null && !loading && error === null,
+    isReady,
   };
 }
 

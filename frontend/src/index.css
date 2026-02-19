@@ -2,19 +2,22 @@
 
 @theme {
   --font-mono: "JetBrains Mono", "Fira Code", "SF Mono", ui-monospace, monospace;
-  --color-charcoal: #1c1c1e;
-  --color-slate: #2c2c2e;
-  --color-slate-light: #3a3a3c;
+  --color-charcoal: #0f0f11;
+  --color-charcoal-mid: #16161a;
+  --color-slate: #1e1e22;
+  --color-slate-light: #2a2a30;
   --color-cyan: #00e5ff;
   --color-cyan-dim: #00b8d4;
-  --color-frost: rgba(255, 255, 255, 0.06);
+  --color-cyan-glow: rgba(0, 229, 255, 0.4);
+  --color-frost: rgba(255, 255, 255, 0.05);
   --color-frost-border: rgba(255, 255, 255, 0.08);
 }
 
+/* --- Cyber-Noir / Glassmorphism base --- */
 body {
   margin: 0;
   min-height: 100vh;
-  background: linear-gradient(160deg, #0d0d0f 0%, #1a1a1e 50%, #121214 100%);
+  background: linear-gradient(165deg, #08080a 0%, #0f0f12 35%, #0c0c0e 70%, #0a0a0c 100%);
   color: #e8e8ea;
   font-family: var(--font-mono), system-ui, sans-serif;
 }
@@ -23,22 +26,97 @@ body {
   min-height: 100vh;
 }
 
+/* Glass panels with deeper blur */
 .glass {
-  background: rgba(28, 28, 30, 0.6);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
+  background: rgba(15, 15, 17, 0.65);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
   border: 1px solid var(--color-frost-border);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.03);
 }
 
 .glass-card {
-  background: rgba(28, 28, 30, 0.6);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
+  background: rgba(15, 15, 17, 0.65);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
   border: 1px solid var(--color-frost-border);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.03);
   border-radius: 1rem;
   padding: 1.5rem;
+}
+
+/* Electric cyan glow (borders, focus, loading) */
+.glow-cyan {
+  box-shadow: 0 0 12px var(--color-cyan-glow), 0 0 24px rgba(0, 229, 255, 0.15);
+}
+.glow-cyan-border {
+  border-color: rgba(0, 229, 255, 0.5);
+  box-shadow: 0 0 16px rgba(0, 229, 255, 0.2);
+}
+
+/* Button with loading state: glowing border animation */
+.btn-cyber {
+  position: relative;
+  background: rgba(0, 229, 255, 0.08);
+  border: 1px solid rgba(0, 229, 255, 0.35);
+  color: var(--color-cyan);
+  font-family: var(--font-mono);
+  font-weight: 500;
+  transition: border-color 0.2s, background 0.2s, box-shadow 0.2s;
+}
+.btn-cyber:hover:not(:disabled) {
+  background: rgba(0, 229, 255, 0.12);
+  border-color: rgba(0, 229, 255, 0.55);
+  box-shadow: 0 0 20px rgba(0, 229, 255, 0.15);
+}
+.btn-cyber:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+.btn-cyber.loading {
+  border-color: rgba(0, 229, 255, 0.6);
+  box-shadow: 0 0 18px rgba(0, 229, 255, 0.25);
+  animation: btn-glow-pulse 1.5s ease-in-out infinite;
+}
+@keyframes btn-glow-pulse {
+  0%, 100% { box-shadow: 0 0 18px rgba(0, 229, 255, 0.25); }
+  50% { box-shadow: 0 0 24px rgba(0, 229, 255, 0.4); }
+}
+
+/* Scanner pulse animation */
+@keyframes scanner-pulse {
+  0%, 100% { opacity: 0.6; box-shadow: 0 0 0 0 rgba(0, 229, 255, 0.3); }
+  50% { opacity: 1; box-shadow: 0 0 20px 2px rgba(0, 229, 255, 0.2); }
+}
+.scanner-pulse {
+  animation: scanner-pulse 2s ease-in-out infinite;
+}
+
+/* Detection flash (match found) */
+@keyframes detection-flash {
+  0% { background-color: rgba(0, 229, 255, 0.15); box-shadow: 0 0 24px rgba(0, 229, 255, 0.3); }
+  100% { background-color: transparent; box-shadow: none; }
+}
+.detection-flash {
+  animation: detection-flash 1.2s ease-out forwards;
+}
+
+/* Row slide-in for new decrypted item */
+@keyframes slide-in-decrypted {
+  from {
+    opacity: 0;
+    transform: translateX(-12px);
+    border-left-color: rgba(16, 185, 129, 0.8);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+    border-left-color: rgba(16, 185, 129, 0.4);
+  }
+}
+.slide-in-decrypted {
+  animation: slide-in-decrypted 0.4s ease-out forwards;
+  border-left: 3px solid rgba(16, 185, 129, 0.4);
 }
 
 .font-mono {

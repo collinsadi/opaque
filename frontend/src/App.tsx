@@ -1,11 +1,14 @@
 import { useState } from "react";
 import { KeysProvider, useKeys } from "./context/KeysContext";
+import { ProtocolLogProvider } from "./context/ProtocolLogContext";
 import { SetupView } from "./components/SetupView";
+import { RegistrationView } from "./components/RegistrationView";
 import { SendView } from "./components/SendView";
 import { PrivateBalanceView } from "./components/PrivateBalanceView";
+import { ProtocolLogPanel } from "./components/ProtocolLogPanel";
 import { useWallet } from "./hooks/useWallet";
 
-type Tab = "setup" | "send" | "balance";
+type Tab = "setup" | "register" | "send" | "balance";
 
 function AppContent() {
   const [tab, setTab] = useState<Tab>("setup");
@@ -31,7 +34,7 @@ function AppContent() {
           </h1>
           <div className="flex items-center gap-3">
             <nav className="flex gap-1">
-              {(["setup", "send", "balance"] as const).map((t) => (
+              {(["setup", "register", "send", "balance"] as const).map((t) => (
                 <button
                   key={t}
                   type="button"
@@ -42,7 +45,13 @@ function AppContent() {
                       : "text-slate-400 hover:text-slate-200 border border-transparent"
                   }`}
                 >
-                  {t === "setup" ? "Setup" : t === "send" ? "Send" : "Private balance"}
+                  {t === "setup"
+                    ? "Setup"
+                    : t === "register"
+                      ? "Register"
+                      : t === "send"
+                        ? "Send"
+                        : "Private balance"}
                 </button>
               ))}
             </nav>
@@ -67,11 +76,14 @@ function AppContent() {
 
       <main className="flex-1 max-w-4xl w-full mx-auto px-4 py-8">
         {tab === "setup" && <SetupView />}
+        {tab === "register" && <RegistrationView />}
         {tab === "send" && <SendView />}
         {tab === "balance" && <PrivateBalanceView />}
       </main>
 
-      <footer className="py-4 text-center text-slate-500 text-xs border-t border-white/10">
+      <ProtocolLogPanel />
+
+      <footer className="py-4 text-center text-slate-500 text-xs border-t border-white/10 font-mono">
         Stealth address wallet — EIP-5564
       </footer>
     </div>
@@ -81,7 +93,9 @@ function AppContent() {
 export default function App() {
   return (
     <KeysProvider>
-      <AppContent />
+      <ProtocolLogProvider>
+        <AppContent />
+      </ProtocolLogProvider>
     </KeysProvider>
   );
 }

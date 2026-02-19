@@ -8,11 +8,16 @@ export {
   refreshBalances,
   getStealthWallet,
   withdrawStealthFunds,
+  executeStealthWithdrawal,
+  claimStealthFunds,
   formatEther,
   type StealthLifecycleWasm,
   type ScanStatus,
   type ScanningProgress,
   type MasterKeys,
   type RelayerHint,
+  type WithdrawalStepTag,
+  type WithdrawalStatus,
+  type WithdrawalStatusCallback,
 } from "./stealthLifecycle";
 export { useVaultStore, type StealthVaultEntry } from "../store/vaultStore";
