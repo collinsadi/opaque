@@ -20,19 +20,19 @@ const statusConfig: Record<
 > = {
   wait: {
     badge: "WAIT",
-    className: "text-amber-400 border-amber-500/50 bg-amber-500/10",
+    className: "text-warning border-warning/20 bg-warning/5",
   },
   ok: {
     badge: "OK",
-    className: "text-emerald-400 border-emerald-500/50 bg-emerald-500/10",
+    className: "text-success border-success/20 bg-success/5",
   },
   done: {
     badge: "DONE",
-    className: "text-cyan border-cyan/50 bg-cyan/10",
+    className: "text-white border-neutral-700 bg-neutral-800",
   },
   error: {
     badge: "ERR",
-    className: "text-red-400 border-red-500/50 bg-red-500/10",
+    className: "text-error border-error/20 bg-error/5",
   },
 };
 
@@ -49,21 +49,18 @@ export function ProtocolStepper({ steps, className = "" }: ProtocolStepperProps)
     <div
       ref={scrollRef}
       className={
-        "protocol-stepper max-h-64 overflow-y-auto rounded-xl border border-frost-border bg-charcoal/90 p-3 font-mono text-sm " +
+        "max-h-64 overflow-y-auto rounded-lg border border-border bg-neutral-950 p-3 font-mono text-sm " +
         className
       }
     >
       {steps.length === 0 ? (
-        <p className="text-slate-500 text-xs">Protocol log will appear here…</p>
+        <p className="text-neutral-600 text-xs">Waiting for protocol events…</p>
       ) : (
         <ul className="space-y-2">
           {steps.map((step) => {
             const config = statusConfig[step.status];
             return (
-              <li
-                key={step.id}
-                className="flex flex-col gap-0.5"
-              >
+              <li key={step.id} className="flex flex-col gap-0.5">
                 <div className="flex items-center gap-2 flex-wrap">
                   <span
                     className={
@@ -71,12 +68,12 @@ export function ProtocolStepper({ steps, className = "" }: ProtocolStepperProps)
                       config.className
                     }
                   >
-                    [ {config.badge} ]
+                    {config.badge}
                   </span>
-                  <span className="text-slate-300">{step.label}</span>
+                  <span className="text-neutral-300 text-xs">{step.label}</span>
                 </div>
                 {step.detail && (
-                  <div className="pl-4 text-slate-500 text-xs break-all">
+                  <div className="pl-4 text-neutral-600 text-xs break-all">
                     {step.detail}
                   </div>
                 )}

@@ -145,9 +145,19 @@ export function useWallet() {
     }
   }, [checkConnection]);
 
+  const disconnect = useCallback(() => {
+    setState({
+      isConnected: false,
+      address: null,
+      isConnecting: false,
+      error: null,
+    });
+  }, []);
+
   return {
     ...state,
     connect,
+    disconnect,
     checkConnection,
   };
 }

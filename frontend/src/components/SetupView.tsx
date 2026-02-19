@@ -43,11 +43,11 @@ export function SetupView() {
   };
 
   return (
-    <div className="glass-card max-w-lg mx-auto">
-      <h2 className="text-xl font-semibold text-slate-200 mb-1">
+    <div className="card max-w-lg mx-auto">
+      <h2 className="text-lg font-semibold text-white mb-1">
         Key setup
       </h2>
-      <p className="text-sm text-slate-400 mb-6">
+      <p className="text-sm text-neutral-500 mb-6">
         Sign with your wallet to derive your viewing and spending keys. Keys stay in this session only.
       </p>
 
@@ -57,24 +57,24 @@ export function SetupView() {
             type="button"
             onClick={handleSign}
             disabled={isSigning}
-            className="w-full py-3 px-4 rounded-xl bg-slate-light border border-cyan/30 text-cyan font-medium hover:bg-cyan/10 hover:border-cyan/50 disabled:opacity-50 transition-colors"
+            className="w-full py-2.5 px-4 rounded-lg text-sm font-medium btn-primary"
           >
             {isSigning ? "Check your wallet…" : "Connect wallet & sign to derive keys"}
           </button>
           {error && (
-            <p className="text-red-400 text-sm">{error}</p>
+            <p className="text-error text-sm">{error}</p>
           )}
         </div>
       )}
 
       {isSetup && stealthMetaAddressHex && (
-        <div className="space-y-4">
-          <p className="text-slate-300 text-sm">Your Stealth Meta-Address (share this to receive):</p>
-          <div className="p-4 rounded-xl bg-charcoal/80 border border-frost-border font-mono text-address text-cyan break-all">
+        <div className="space-y-3">
+          <p className="text-neutral-400 text-sm">Your stealth meta-address:</p>
+          <div className="p-3 rounded-lg bg-neutral-900 border border-border font-mono text-address text-neutral-200 break-all">
             {stealthMetaAddressHex}
           </div>
-          <p className="text-slate-500 text-xs">
-            Copy and share with senders. They will use it to generate a one-time stealth address for you.
+          <p className="text-neutral-600 text-xs">
+            Share this with senders. They will use it to generate a one-time stealth address for you.
           </p>
         </div>
       )}

@@ -1,91 +1,99 @@
 import { useState } from "react";
 import { KeysProvider, useKeys } from "./context/KeysContext";
 import { ProtocolLogProvider } from "./context/ProtocolLogContext";
-import { SetupView } from "./components/SetupView";
-import { RegistrationView } from "./components/RegistrationView";
+import { ToastProvider, useToast } from "./context/ToastContext";
+import { LandingView } from "./components/LandingView";
+import { DashboardView } from "./components/DashboardView";
 import { SendView } from "./components/SendView";
 import { PrivateBalanceView } from "./components/PrivateBalanceView";
+import { TransactionHistoryView } from "./components/TransactionHistoryView";
+import { ReceiveView } from "./components/ReceiveView";
+import { SubENSView } from "./components/SubENSView";
+import { ProfileView } from "./components/ProfileView";
 import { ProtocolLogPanel } from "./components/ProtocolLogPanel";
+import { Layout, type Tab } from "./components/Layout";
 import { useWallet } from "./hooks/useWallet";
-
-type Tab = "setup" | "register" | "send" | "balance";
+import { useVaultStore } from "./store/vaultStore";
 
 function AppContent() {
-  const [tab, setTab] = useState<Tab>("setup");
+  const [tab, setTab] = useState<Tab>("dashboard");
   useKeys();
-  const { isConnected, address, isConnecting, connect } = useWallet();
+  const { isConnected, address, isConnecting, connect, disconnect } = useWallet();
+  const { isSetup, clearKeys } = useKeys();
+  const clearVault = useVaultStore((s) => s.clear);
 
   const handleTab = (t: Tab) => {
-    console.log("📑 [Opaque] Tab switch", { tab: t });
+    if (t === "subens") return;
     setTab(t);
   };
 
   const handleConnect = async () => {
-    console.log("🔌 [Opaque] Connecting wallet…");
     await connect();
   };
 
+  const handleDisconnect = () => {
+    clearKeys();
+    clearVault();
+    disconnect();
+    setTab("dashboard");
+  };
+
+  const renderView = () => {
+    if (tab === "dashboard") return <DashboardView onNavigate={setTab} />;
+    if (tab === "send") return <SendView />;
+    if (tab === "receive") return <ReceiveView onBack={() => setTab("dashboard")} />;
+    if (tab === "balance") return <PrivateBalanceView />;
+    if (tab === "history") return <TransactionHistoryView />;
+    if (tab === "subens") return <SubENSView onBack={() => setTab("dashboard")} />;
+    if (tab === "profile") return <ProfileView onNavigate={setTab} onDisconnect={handleDisconnect} />;
+    return null;
+  };
+
+  if (!isSetup) {
+    return (
+      <div className="h-screen flex flex-col bg-black">
+        <LandingView />
+      </div>
+    );
+  }
+
   return (
-    <div className="min-h-screen flex flex-col">
-      <header className="border-b border-white/10 glass sticky top-0 z-10">
-        <div className="max-w-4xl mx-auto px-4 py-4 flex items-center justify-between">
-          <h1 className="text-lg font-semibold tracking-tight text-white">
-            Opaque Cash
-          </h1>
-          <div className="flex items-center gap-3">
-            <nav className="flex gap-1">
-              {(["setup", "register", "send", "balance"] as const).map((t) => (
-                <button
-                  key={t}
-                  type="button"
-                  onClick={() => handleTab(t)}
-                  className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
-                    tab === t
-                      ? "bg-cyan/20 text-cyan border border-cyan/40"
-                      : "text-slate-400 hover:text-slate-200 border border-transparent"
-                  }`}
-                >
-                  {t === "setup"
-                    ? "Setup"
-                    : t === "register"
-                      ? "Register"
-                      : t === "send"
-                        ? "Send"
-                        : "Private balance"}
-                </button>
-              ))}
-            </nav>
-            {!isConnected && (
-              <button
-                type="button"
-                onClick={handleConnect}
-                disabled={isConnecting}
-                className="px-4 py-2 rounded-lg text-sm font-medium bg-cyan/20 text-cyan border border-cyan/40 hover:bg-cyan/30 hover:border-cyan/50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              >
-                {isConnecting ? "Connecting…" : "Connect MetaMask"}
-              </button>
-            )}
-            {isConnected && address && (
-              <div className="px-3 py-2 rounded-lg text-sm font-mono text-slate-300 bg-slate/50 border border-frost-border">
-                {address.slice(0, 6)}…{address.slice(-4)}
-              </div>
-            )}
-          </div>
+    <Layout
+      tab={tab}
+      onTabChange={handleTab}
+      isConnected={isConnected}
+      address={address ?? undefined}
+      isConnecting={isConnecting}
+      onConnect={handleConnect}
+      onDisconnect={handleDisconnect}
+      protocolLog={<ProtocolLogPanel />}
+    >
+      {renderView()}
+    </Layout>
+  );
+}
+
+function ToastLayer() {
+  const { toasts, dismiss } = useToast();
+  if (toasts.length === 0) return null;
+  return (
+    <div className="fixed bottom-24 md:bottom-56 left-4 right-4 md:left-auto md:right-6 z-50 flex flex-col gap-2 max-w-sm md:ml-auto">
+      {toasts.map((t) => (
+        <div
+          key={t.id}
+          className="px-4 py-3 rounded-lg bg-neutral-800 border border-neutral-700 text-white text-sm shadow-lg flex items-center justify-between gap-2"
+        >
+          <span>{t.message}</span>
+          <button
+            type="button"
+            onClick={() => dismiss(t.id)}
+            className="text-neutral-400 hover:text-white shrink-0"
+            aria-label="Dismiss"
+          >
+            ×
+          </button>
         </div>
-      </header>
-
-      <main className="flex-1 max-w-4xl w-full mx-auto px-4 py-8">
-        {tab === "setup" && <SetupView />}
-        {tab === "register" && <RegistrationView />}
-        {tab === "send" && <SendView />}
-        {tab === "balance" && <PrivateBalanceView />}
-      </main>
-
-      <ProtocolLogPanel />
-
-      <footer className="py-4 text-center text-slate-500 text-xs border-t border-white/10 font-mono">
-        Stealth address wallet — EIP-5564
-      </footer>
+      ))}
     </div>
   );
 }
@@ -94,7 +102,10 @@ export default function App() {
   return (
     <KeysProvider>
       <ProtocolLogProvider>
-        <AppContent />
+        <ToastProvider>
+          <AppContent />
+          <ToastLayer />
+        </ToastProvider>
       </ProtocolLogProvider>
     </KeysProvider>
   );

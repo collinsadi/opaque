@@ -12,6 +12,9 @@ import type { ProtocolStep } from "./ProtocolStepper";
 import type { OpaqueWasmModule } from "../hooks/useOpaqueWasm";
 import { ClaimModal } from "./ClaimModal";
 import { useProtocolLog } from "../context/ProtocolLogContext";
+import { useTxHistoryStore } from "../store/txHistoryStore";
+import { useGhostAddressStore } from "../store/ghostAddressStore";
+import { secp256k1 } from "@noble/curves/secp256k1";
 
 export type FoundTx = {
   id: string;
@@ -21,11 +24,9 @@ export type FoundTx = {
   txHash: string;
   blockNumber: number;
   timestamp?: number;
-  /** Set to true after a successful claim so it no longer appears in active balance. */
   isSpent?: boolean;
 };
 
-/** Announcement event ABI matching StealthAddressAnnouncer.sol (indexed: schemeId, stealthAddress, caller). */
 const ANNOUNCEMENT_EVENT = STEALTH_ANNOUNCER_ABI.find(
   (item): item is (typeof STEALTH_ANNOUNCER_ABI)[number] & { type: "event"; name: "Announcement" } =>
     item.type === "event" && item.name === "Announcement"
@@ -38,19 +39,16 @@ type FetchFoundTxsOpts = {
   getMasterKeys: (() => MasterKeys) | null;
 };
 
-/** Parse view tag from announcement metadata (first byte of metadata bytes). */
 function viewTagFromMetadata(metadata: string | undefined): number {
   if (!metadata || metadata.length < 2) return 0;
   return parseInt(metadata.slice(2, 4), 16);
 }
 
-/** Normalize hex string for viem (ensure 0x prefix). */
 function toHexBytes(hex: string): Uint8Array {
   const normalized = hex.startsWith("0x") ? hex : `0x${hex}`;
   return hexToBytes(normalized as `0x${string}`);
 }
 
-/** Fetch Announcement logs, filter by check_announcement (current wallet), then fetch balances and reconstruct keys for matches only. */
 async function fetchFoundTxs(opts: FetchFoundTxsOpts): Promise<FoundTx[]> {
   const { publicClient, wasm, getMasterKeys } = opts;
   console.log("📥 [Opaque] PrivateBalance: fetchFoundTxs (getLogs)…");
@@ -91,7 +89,6 @@ async function fetchFoundTxs(opts: FetchFoundTxsOpts): Promise<FoundTx[]> {
     };
   });
 
-  // Mandatory: only show txs belonging to the connected wallet; require WASM + keys
   if (!wasm || !getMasterKeys) {
     console.log("📥 [Opaque] PrivateBalance: no WASM or keys, returning no owned txs");
     return [];
@@ -113,7 +110,6 @@ async function fetchFoundTxs(opts: FetchFoundTxsOpts): Promise<FoundTx[]> {
       const ephemeralPubKey = toHexBytes(row.ephemeralPubKeyHex);
       if (ephemeralPubKey.length !== 33) continue;
 
-      // 1) View-tag check first (skip expensive EC math when tag doesn't match)
       const viewTagResult = wasm.check_announcement_view_tag_wasm(
         row.viewTag,
         viewPrivKey,
@@ -121,7 +117,6 @@ async function fetchFoundTxs(opts: FetchFoundTxsOpts): Promise<FoundTx[]> {
       );
       if (viewTagResult === "NoMatch") continue;
 
-      // 2) Full check: announcement belongs to this wallet
       const stealthAddressNormalized = getAddress(row.stealthAddress);
       let isOurs: boolean;
       try {
@@ -193,7 +188,6 @@ async function fetchFoundTxs(opts: FetchFoundTxsOpts): Promise<FoundTx[]> {
   return found;
 }
 
-/** Real chain status: current block from RPC (no mock block height). */
 async function fetchScanningStatus(): Promise<{
   scanning: boolean;
   progressPercent: number;
@@ -235,16 +229,20 @@ export function PrivateBalanceView() {
   const [destinationByTxId, setDestinationByTxId] = useState<Record<string, string>>({});
   const [newlyDetectedIds, setNewlyDetectedIds] = useState<string[]>([]);
   const [claimModalTx, setClaimModalTx] = useState<FoundTx | null>(null);
+  const [ghostTxs, setGhostTxs] = useState<FoundTx[]>([]);
   const { wasm, isReady: wasmReady } = useOpaqueWasm();
   const keysContext = useKeys();
   const { address: mainWalletAddress } = useWallet();
   const { push: logPush } = useProtocolLog();
+  const pushTx = useTxHistoryStore((s) => s.push);
+  const chainId = getAppChain().id;
+  const removeGhost = useGhostAddressStore((s) => s.remove);
 
   const setDestination = useCallback((txId: string, value: string) => {
     setDestinationByTxId((prev) => ({ ...prev, [txId]: value }));
   }, []);
 
-  const activeTxs = found.filter((tx) => !tx.isSpent);
+  const activeTxs = [...found.filter((tx) => !tx.isSpent), ...ghostTxs];
 
   function copyPrivateKey(key: string) {
     navigator.clipboard.writeText(key);
@@ -277,14 +275,51 @@ export function PrivateBalanceView() {
       setWithdrawalSteps([]);
       logPush("wasm", "Reconstructing stealth key and signing claim tx…");
       logPush("blockchain", `Claim: ${formatEther(tx.balance)} ETH → ${trimmed.slice(0, 10)}…`);
+      let step3Amount: string | null = null;
       const onStatus = (s: { tag: string; label: string; detail?: string }) => {
+        if (s.detail?.includes("Sending ") && s.detail?.includes(" ETH ")) {
+          const m = s.detail.match(/Sending ([\d.]+) ETH/);
+          if (m) step3Amount = m[1];
+        }
         setWithdrawalSteps((prev) => {
-          const next = [...prev];
-          if (next.length > 0) next[next.length - 1] = { ...next[next.length - 1], status: "ok" };
-          const status: ProtocolStep["status"] = s.tag === "DONE" ? "done" : "wait";
-          return next.concat([
-            { id: `wd-${Date.now()}-${prev.length}`, status, label: `[ ${s.tag} ] ${s.label}`, detail: s.detail },
-          ]);
+          const steps: ProtocolStep[] =
+            prev.length >= 3
+              ? [...prev]
+              : [
+                  { id: "wd-1", status: "wait", label: "[Step 1] Reconstructing key…" },
+                  { id: "wd-2", status: "wait", label: "[Step 2] Estimating Gas…" },
+                  { id: "wd-3", status: "wait", label: "[Step 3] Sweeping … to Destination" },
+                ];
+          if (s.label.includes("Reconstructing")) {
+            steps[0] = { ...steps[0], status: "ok" };
+          }
+          if (s.label.includes("Estimating") || s.label.includes("gas")) {
+            steps[0] = { ...steps[0], status: "ok" };
+            steps[1] = { ...steps[1], status: "ok" };
+          }
+          if (step3Amount != null) {
+            steps[2] = {
+              ...steps[2],
+              label: `[Step 3] Sweeping ${step3Amount} ETH to Destination`,
+              status: steps[2].status,
+            };
+          }
+          if (s.tag === "SIGN" || s.tag === "SEND") {
+            steps[0] = { ...steps[0], status: "ok" };
+            steps[1] = { ...steps[1], status: "ok" };
+          }
+          if (s.tag === "DONE") {
+            steps[0] = { ...steps[0], status: "ok" };
+            steps[1] = { ...steps[1], status: "ok" };
+            steps[2] = {
+              ...steps[2],
+              status: "done",
+              label: step3Amount
+                ? `[Step 3] Sweeping ${step3Amount} ETH to Destination`
+                : "[Step 3] Sweeping to Destination",
+            };
+          }
+          return steps;
         });
       };
       try {
@@ -294,9 +329,23 @@ export function PrivateBalanceView() {
           publicClient,
           onStatus
         );
-        setFound((prev) =>
-          prev.map((t) => (t.id === tx.id ? { ...t, isSpent: true } : t))
-        );
+        const isGhost = tx.id.startsWith("ghost-");
+        pushTx({
+          chainId,
+          kind: isGhost ? "ghost" : "received",
+          counterparty: isGhost ? "Manual Ghost" : tx.address.slice(0, 10) + "…",
+          amountWei: tx.balance.toString(),
+          txHash: undefined,
+          stealthAddress: tx.address,
+        });
+        if (isGhost) {
+          removeGhost(tx.address, chainId);
+          setGhostTxs((prev) => prev.filter((t) => t.id !== tx.id));
+        } else {
+          setFound((prev) =>
+            prev.map((t) => (t.id === tx.id ? { ...t, isSpent: true } : t))
+          );
+        }
         setClaimModalTx((prev) => (prev?.id === tx.id ? null : prev));
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
@@ -310,11 +359,10 @@ export function PrivateBalanceView() {
         setClaimingId(null);
       }
     },
-    []
+    [chainId, pushTx, removeGhost]
   );
 
   useEffect(() => {
-    // Do not run any logic that may call WASM until the module is ready
     if (!wasmReady || wasm === null) {
       return;
     }
@@ -353,7 +401,45 @@ export function PrivateBalanceView() {
         setProgressPercent(status.progressPercent);
         setMessage(status.message ?? null);
         logPush("wasm", `Scan complete: ${txs.length} owned announcement(s), block ${status.lastBlock}`);
-        console.log("📥 [Opaque] PrivateBalance: loaded ✅", { txsCount: txs.length, scanning: status.scanning });
+
+        const ghostEntries = useGhostAddressStore.getState().getForChain(chain.id);
+        let ghostFound: FoundTx[] = [];
+        if (wasm && getMasterKeys && ghostEntries.length > 0) {
+          let masterKeys: MasterKeys | null = null;
+          try {
+            masterKeys = getMasterKeys();
+          } catch {
+            // keys not available
+          }
+          if (masterKeys) {
+            for (const g of ghostEntries) {
+              const balance = await publicClient.getBalance({ address: g.stealthAddress });
+              if (balance === 0n) continue;
+              const ephemeralPubKey = secp256k1.getPublicKey(toHexBytes(g.ephemeralPrivKeyHex), true);
+              const stealthPrivKeyBytes = wasm.reconstruct_signing_key_wasm(
+                masterKeys.spendPrivKey,
+                masterKeys.viewPrivKey,
+                ephemeralPubKey
+              );
+              const privateKey =
+                "0x" +
+                Array.from(stealthPrivKeyBytes)
+                  .map((b) => b.toString(16).padStart(2, "0"))
+                  .join("");
+              ghostFound.push({
+                id: `ghost-${g.stealthAddress}`,
+                address: g.stealthAddress,
+                balance,
+                privateKey,
+                txHash: "",
+                blockNumber: 0,
+                isSpent: false,
+              });
+            }
+          }
+        }
+        if (!cancelled) setGhostTxs(ghostFound);
+        console.log("📥 [Opaque] PrivateBalance: loaded ✅", { txsCount: txs.length, ghostCount: ghostFound.length, scanning: status.scanning });
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -370,121 +456,126 @@ export function PrivateBalanceView() {
   }, [newlyDetectedIds]);
 
   return (
-    <div className="glass-card max-w-2xl mx-auto">
-      <h2 className="text-xl font-semibold text-slate-200 mb-1">
-        Private balance
-      </h2>
-      <p className="text-sm text-slate-400 mb-6">
-        Stealth transactions found for your viewing key. Data is provided by the Opaque Cash indexer.
-      </p>
+    <div className="w-full h-full min-h-[calc(100vh-8rem)] flex flex-col">
+      {/* Header card - full width */}
+      <div className="card mb-6">
+        <h2 className="text-lg font-semibold text-white mb-1">
+          Private balance
+        </h2>
+        <p className="text-sm text-neutral-500 mb-6">
+          Stealth transactions found for your viewing key.
+        </p>
 
-      {/* Scanning status — pulse when scanning, block counter */}
-      <div
-        className={`mb-6 p-4 rounded-xl bg-slate/80 border border-frost-border transition-all ${
-          scanning ? "scanner-pulse" : ""
-        }`}
-      >
-        <div className="flex items-center justify-between gap-2 mb-2">
-          <span className="text-sm text-slate-300 font-mono">
-            {scanning ? "Scanning" : "Idle"}
-          </span>
-          <span className="text-cyan text-sm font-mono">
-            {lastBlock > 0
-              ? `Block 0 / ${lastBlock.toLocaleString()}`
-              : scanning
-                ? "…"
-                : "—"}
-          </span>
+        {/* Scanning status */}
+        <div
+          className={`p-4 rounded-lg bg-neutral-900 border border-border ${
+            scanning ? "scanner-pulse" : ""
+          }`}
+        >
+          <div className="flex items-center justify-between gap-2 mb-2">
+            <span className="text-sm text-neutral-400 font-mono">
+              {scanning ? "Scanning" : "Idle"}
+            </span>
+            <span className="text-neutral-300 text-sm font-mono">
+              {lastBlock > 0
+                ? `Block ${lastBlock.toLocaleString()}`
+                : scanning
+                  ? "…"
+                  : "—"}
+            </span>
+          </div>
+          <div className="h-1 rounded-full bg-neutral-800 overflow-hidden">
+            <div
+              className="h-full bg-neutral-500 rounded-full transition-all duration-500"
+              style={{ width: `${progressPercent}%` }}
+            />
+          </div>
+          {(message || (lastBlock > 0 && scanning)) && (
+            <p className="text-neutral-600 text-xs mt-2 font-mono">
+              {scanning && lastBlock > 0
+                ? `Scanning block 0 … ${lastBlock.toLocaleString()}`
+                : message ?? ""}
+            </p>
+          )}
         </div>
-        <div className="h-1.5 rounded-full bg-charcoal overflow-hidden">
-          <div
-            className="h-full bg-cyan/70 rounded-full transition-all duration-500"
-            style={{ width: `${progressPercent}%` }}
-          />
-        </div>
-        {(message || (lastBlock > 0 && scanning)) && (
-          <p className="text-slate-500 text-xs mt-2 font-mono">
-            {scanning && lastBlock > 0
-              ? `Scanning block 0 … ${lastBlock.toLocaleString()}`
-              : message ?? ""}
-          </p>
-        )}
       </div>
 
-      {/* List of found txs — only after WASM is ready */}
+      {/* Global claim error - full width */}
+      {claimError && (
+        <div className="mb-4 p-3 rounded-lg bg-neutral-900 border border-error/30 text-error text-sm">
+          {claimError}
+        </div>
+      )}
+
+      {/* Content: loading / empty / card grid */}
       {!wasmReady ? (
-        <p className="text-slate-500 text-sm">Initializing cryptography…</p>
+        <div className="card max-w-md">
+          <p className="text-neutral-600 text-sm">Initializing cryptography…</p>
+        </div>
       ) : loading ? (
-        <p className="text-slate-500 text-sm">Loading…</p>
+        <div className="card max-w-md">
+          <p className="text-neutral-600 text-sm">Loading…</p>
+        </div>
       ) : activeTxs.length === 0 ? (
-        <div className="rounded-xl bg-slate/80 border border-frost-border p-4">
-          <p className="text-slate-300 text-sm">
-            Scanning for incoming private payments…
+        <div className="card max-w-md">
+          <p className="text-neutral-400 text-sm">
+            No incoming payments found yet.
           </p>
-          <p className="text-slate-500 text-xs mt-1">
-            Payments sent to your stealth address will appear here. Only transactions belonging to your connected wallet are shown.
+          <p className="text-neutral-600 text-xs mt-1">
+            Payments sent to your stealth address will appear here.
           </p>
         </div>
       ) : (
-        <>
-          {claimError && (
-            <div className="mb-4 p-3 rounded-xl bg-red-950/50 border border-red-500/50 text-red-200 text-sm">
-              {claimError}
-            </div>
-          )}
-          <ul className="space-y-3">
-            {activeTxs.map((tx) => {
-              const isNewDetection = newlyDetectedIds.includes(tx.id);
-              return (
-              <li
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4 flex-1 min-h-0 content-start">
+          {activeTxs.map((tx) => {
+            const isNewDetection = newlyDetectedIds.includes(tx.id);
+            return (
+              <div
                 key={tx.id}
-                className={`p-4 rounded-xl font-mono text-sm border ${
-                  tx.balance > 0n
-                    ? "bg-emerald-950/40 border-emerald-500/50"
-                    : "bg-charcoal/80 border-frost-border"
-                } ${isNewDetection ? "slide-in-decrypted detection-flash" : ""}`}
+                className={`card font-mono text-sm ${
+                  isNewDetection ? "slide-in-decrypted detection-flash" : ""
+                }`}
               >
-                <div className="flex flex-wrap items-center gap-2 mb-2">
-                  <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-cyan/20 text-cyan border border-cyan/40">
-                    Found
-                  </span>
-                  {isNewDetection && (
-                    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-emerald-500/20 text-emerald-400 border border-emerald-500/50">
-                      Decrypted
+                <div className="flex flex-wrap items-center gap-2 mb-3">
+                  {tx.balance > 0n && (
+                    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-success/10 text-success border border-success/20">
+                      Active
                     </span>
                   )}
-                  <span className="text-slate-500 text-xs">
+                  <span className="text-neutral-600 text-xs">
                     Block #{tx.blockNumber}
                   </span>
                 </div>
-                <div className="flex justify-between items-start gap-2">
-                  <span className="text-cyan break-all">{tx.address}</span>
-                  <span className="text-emerald-400 font-semibold shrink-0">
+                <div className="flex justify-between items-start gap-2 mb-1">
+                  <span className="text-neutral-300 break-all text-xs">{tx.address}</span>
+                  <span className="text-success font-semibold shrink-0">
                     {formatEther(tx.balance)} ETH
                   </span>
                 </div>
-                <div className="text-slate-500 text-xs mt-1 break-all">
+                <div className="text-neutral-700 text-xs break-all">
                   {tx.txHash}
                 </div>
+
+                {/* Private key reveal */}
                 <div className="flex flex-wrap items-center gap-2 mt-3">
                   {tx.privateKey != null && (
                     <>
                       {showKeyId === tx.id ? (
                         <>
-                          <span className="text-slate-400 text-xs break-all max-w-48 truncate">
+                          <span className="text-neutral-500 text-xs break-all max-w-48 truncate">
                             {tx.privateKey}
                           </span>
                           <button
                             type="button"
                             onClick={() => copyPrivateKey(tx.privateKey!)}
-                            className="px-2 py-1 text-xs rounded bg-charcoal text-cyan border border-frost-border hover:border-cyan/70"
+                            className="px-2 py-1 text-xs rounded-md btn-secondary"
                           >
-                            Copy Private Key
+                            Copy key
                           </button>
                           <button
                             type="button"
                             onClick={() => setShowKeyId(null)}
-                            className="px-2 py-1 text-xs rounded bg-charcoal text-slate-400 border border-frost-border hover:text-slate-200"
+                            className="px-2 py-1 text-xs rounded-md btn-secondary"
                           >
                             Hide
                           </button>
@@ -493,22 +584,24 @@ export function PrivateBalanceView() {
                         <button
                           type="button"
                           onClick={() => setShowKeyId(tx.id)}
-                          className="px-2 py-1 text-xs rounded bg-charcoal text-amber-400 border border-amber-500/50 hover:border-amber-400/70"
+                          className="px-2 py-1 text-xs rounded-md bg-neutral-900 text-warning border border-warning/20 hover:border-warning/40 transition-colors"
                         >
-                          Show
+                          Reveal key
                         </button>
                       )}
                     </>
                   )}
                 </div>
-                <div className="mt-3 space-y-2">
-                  <label className="block text-slate-400 text-xs">Destination address</label>
+
+                {/* Claim section */}
+                <div className="mt-4 pt-3 border-t border-border space-y-2">
+                  <label className="block text-neutral-500 text-xs">Destination</label>
                   <input
                     type="text"
                     value={destinationByTxId[tx.id] ?? ""}
                     onChange={(e) => setDestination(tx.id, e.target.value)}
-                    placeholder="0x… (use a fresh address for privacy)"
-                    className="w-full px-3 py-2 text-sm font-mono rounded-lg bg-charcoal border border-frost-border text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-cyan/50"
+                    placeholder="0x… (use a fresh address)"
+                    className="input-field text-sm"
                   />
                   {mainWalletAddress && (() => {
                     const dest = (destinationByTxId[tx.id] ?? "").trim();
@@ -519,7 +612,7 @@ export function PrivateBalanceView() {
                       return null;
                     }
                     return (
-                      <p className="text-amber-400 text-xs">
+                      <p className="text-warning text-xs">
                         Sending to your connected wallet will link your identity to this stealth transaction.
                       </p>
                     );
@@ -529,7 +622,7 @@ export function PrivateBalanceView() {
                       <button
                         type="button"
                         onClick={() => setDestination(tx.id, mainWalletAddress)}
-                        className="px-2 py-1 text-xs rounded bg-charcoal text-slate-400 border border-frost-border hover:text-slate-200"
+                        className="px-2 py-1 text-xs rounded-md btn-secondary"
                       >
                         Use connected wallet
                       </button>
@@ -543,18 +636,18 @@ export function PrivateBalanceView() {
                         claimingId !== null
                       }
                       onClick={() => setClaimModalTx(tx)}
-                      className="px-3 py-1.5 text-xs font-medium rounded bg-emerald-600 text-white border border-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed hover:enabled:bg-emerald-500"
+                      className="px-3 py-1.5 text-xs font-medium rounded-md bg-white text-black disabled:opacity-40 disabled:cursor-not-allowed hover:enabled:opacity-85 transition-opacity"
                     >
                       {claimingId === tx.id ? "Claiming…" : "Claim"}
                     </button>
                   </div>
                 </div>
-              </li>
+              </div>
             );
-            })}
-          </ul>
-        </>
+          })}
+        </div>
       )}
+
 
       {claimModalTx && (
         <ClaimModal
