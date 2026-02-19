@@ -110,11 +110,14 @@ export function LandingView() {
   return (
     <div className="min-h-[80vh] flex flex-col items-center justify-center px-4 py-12">
       <div className="max-w-lg w-full text-center">
-        <h1 className="text-3xl md:text-4xl font-bold text-white tracking-tight mb-3">
-          Enter the Vault
+        <h1 className="text-4xl md:text-5xl font-bold text-white tracking-tight mb-3">
+          Opaque
         </h1>
-        <p className="text-neutral-500 text-sm md:text-base mb-10">
-          Initialize the protocol. Your keys stay in this session; no custody.
+        <p className="text-neutral-500 text-sm md:text-base mb-4">
+          Non-custodial stealth payment protocol.
+        </p>
+        <p className="text-neutral-600 text-xs md:text-sm mb-10 max-w-md mx-auto">
+          Your keys never leave your browser. Privacy is mathematically guaranteed.
         </p>
 
         {phase === "idle" && (
@@ -122,7 +125,7 @@ export function LandingView() {
             type="button"
             onClick={handleEnterVault}
             disabled={isConnecting}
-            className="w-full max-w-sm mx-auto py-4 px-6 rounded-xl text-base font-semibold btn-primary"
+            className="w-full max-w-sm mx-auto py-3.5 px-6 rounded-lg text-sm font-medium bg-white text-black hover:opacity-90 transition-opacity"
           >
             {!isConnected ? "Connect wallet & enter" : "Initialize Protocol"}
           </button>

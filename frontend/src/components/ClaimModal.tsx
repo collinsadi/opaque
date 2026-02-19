@@ -1,10 +1,12 @@
 import { getAddress, formatEther } from "viem";
 import type { FoundTx } from "./PrivateBalanceView";
+import type { TokenInfo } from "../lib/tokens";
 import { ProtocolStepper } from "./ProtocolStepper";
 import type { ProtocolStep } from "./ProtocolStepper";
 
 type ClaimModalProps = {
   tx: FoundTx;
+  asset: TokenInfo;
   destination: string;
   mainWalletAddress: string | undefined;
   claiming: boolean;
@@ -15,8 +17,14 @@ type ClaimModalProps = {
   onClose: () => void;
 };
 
+function formatAmount(asset: TokenInfo, raw: bigint): string {
+  if (asset.address === null) return formatEther(raw);
+  return (Number(raw) / 10 ** asset.decimals).toFixed(asset.decimals);
+}
+
 export function ClaimModal({
   tx,
+  asset,
   destination,
   mainWalletAddress,
   claiming,
@@ -26,6 +34,8 @@ export function ClaimModal({
   onConfirm,
   onClose,
 }: ClaimModalProps) {
+  const amountRaw = asset.address === null ? tx.balance : (tx.tokenBalances[asset.address] ?? 0n);
+  const amountStr = formatAmount(asset, amountRaw);
   const destinationTrimmed = destination.trim();
   const isSameAsMain =
     !!mainWalletAddress &&
@@ -57,7 +67,7 @@ export function ClaimModal({
         <div className="mb-4 p-3 rounded-lg bg-neutral-900 border border-border font-mono text-xs text-neutral-400">
           <div className="flex justify-between items-center gap-2">
             <span className="text-neutral-300 break-all">{tx.address.slice(0, 10)}…{tx.address.slice(-8)}</span>
-            <span className="text-success font-medium shrink-0">{formatEther(tx.balance)} ETH</span>
+            <span className="text-success font-medium shrink-0">{amountStr} {asset.symbol}</span>
           </div>
         </div>
 

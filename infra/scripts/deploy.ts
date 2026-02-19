@@ -14,7 +14,11 @@ import { fileURLToPath } from "url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-const CONTRACTS = ["StealthMetaAddressRegistry", "StealthAddressAnnouncer"] as const;
+const CONTRACTS = ["StealthMetaAddressRegistry", "StealthAddressAnnouncer", "MockERC20"] as const;
+const MOCK_TOKENS: { name: string; symbol: string; decimals: number }[] = [
+  { name: "USD Coin", symbol: "USDC", decimals: 6 },
+  { name: "Tether USD", symbol: "USDT", decimals: 6 },
+];
 const ARTIFACTS_DIR = path.join(__dirname, "..", "artifacts", "contracts");
 const FRONTEND_ROOT = path.join(__dirname, "..", "..", "frontend");
 const FRONTEND_CONTRACTS = path.join(FRONTEND_ROOT, "src", "contracts");
@@ -48,7 +52,7 @@ async function main() {
   const addresses: Record<string, string> = {};
   let nextNonce = await signer.getNonce("latest");
 
-  for (const contractName of CONTRACTS) {
+  for (const contractName of ["StealthMetaAddressRegistry", "StealthAddressAnnouncer"]) {
     const artifact = loadArtifact(contractName);
     const factory = new ethers.ContractFactory(
       artifact.abi as ethers.InterfaceAbi,
@@ -61,6 +65,21 @@ async function main() {
     const address = await contract.getAddress();
     addresses[contractName] = address;
     console.log(`${contractName} deployed at ${address}`);
+  }
+
+  const mockErc20Artifact = loadArtifact("MockERC20");
+  const mockFactory = new ethers.ContractFactory(
+    mockErc20Artifact.abi as ethers.InterfaceAbi,
+    mockErc20Artifact.bytecode ?? "0x",
+    signer
+  );
+  for (const t of MOCK_TOKENS) {
+    const contract = await mockFactory.deploy(t.name, t.symbol, t.decimals, { nonce: nextNonce });
+    await contract.waitForDeployment();
+    nextNonce += 1;
+    const address = await contract.getAddress();
+    addresses[t.symbol] = address;
+    console.log(`MockERC20 ${t.symbol} deployed at ${address}`);
   }
 
   // Ensure frontend contract dirs exist
@@ -77,6 +96,8 @@ export const deployedAddresses = {
   chainId: ${chainId},
   StealthMetaAddressRegistry: "${addresses.StealthMetaAddressRegistry}" as const,
   StealthAddressAnnouncer: "${addresses.StealthAddressAnnouncer}" as const,
+  USDC: "${(addresses as Record<string, string>).USDC ?? "0x0000000000000000000000000000000000000000"}" as const,
+  USDT: "${(addresses as Record<string, string>).USDT ?? "0x0000000000000000000000000000000000000000"}" as const,
 } as const;
 
 export type DeployedAddresses = typeof deployedAddresses;
@@ -90,7 +111,7 @@ export type DeployedAddresses = typeof deployedAddresses;
   console.log("Wrote frontend/src/contracts/deployedAddresses.ts");
 
   // Copy ABIs (only the ABI array as JSON for smaller files)
-  for (const contractName of CONTRACTS) {
+  for (const contractName of ["StealthMetaAddressRegistry", "StealthAddressAnnouncer", "MockERC20"]) {
     const artifact = loadArtifact(contractName);
     const abiPath = path.join(FRONTEND_ABIS, `${contractName}.json`);
     fs.writeFileSync(abiPath, JSON.stringify(artifact.abi, null, 2), "utf-8");

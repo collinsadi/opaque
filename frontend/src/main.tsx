@@ -1,7 +1,12 @@
-import { StrictMode } from 'react'
-import { createRoot } from 'react-dom/client'
-import './index.css'
-import App from './App.tsx'
+import { StrictMode } from "react";
+import { createRoot } from "react-dom/client";
+import { BrowserRouter, Routes, Route } from "react-router-dom";
+import "./index.css";
+import App from "./App.tsx";
+import { NotFoundPage } from "./components/NotFoundPage.tsx";
+import { PrivacyPage } from "./components/PrivacyPage.tsx";
+import { TermsPage } from "./components/TermsPage.tsx";
+import { DisclaimerPage } from "./components/DisclaimerPage.tsx";
 
 console.log("🚀 [Opaque] App bootstrapping…");
 
@@ -37,8 +42,16 @@ if (expectedChainId != null) {
   });
 }
 
-createRoot(document.getElementById('root')!).render(
+createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <App />
-  </StrictMode>,
-)
+    <BrowserRouter>
+      <Routes>
+        <Route path="/" element={<App />} />
+        <Route path="/privacy" element={<PrivacyPage />} />
+        <Route path="/terms" element={<TermsPage />} />
+        <Route path="/disclaimer" element={<DisclaimerPage />} />
+        <Route path="*" element={<NotFoundPage />} />
+      </Routes>
+    </BrowserRouter>
+  </StrictMode>
+);

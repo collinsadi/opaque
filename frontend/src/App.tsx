@@ -1,7 +1,9 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { KeysProvider, useKeys } from "./context/KeysContext";
+import { hasCompletedOnboardingTour, runOnboardingTour } from "./lib/onboardingTour";
 import { ProtocolLogProvider } from "./context/ProtocolLogContext";
 import { ToastProvider, useToast } from "./context/ToastContext";
+import { LandingPage } from "./components/LandingPage";
 import { LandingView } from "./components/LandingView";
 import { DashboardView } from "./components/DashboardView";
 import { SendView } from "./components/SendView";
@@ -17,6 +19,7 @@ import { useVaultStore } from "./store/vaultStore";
 
 function AppContent() {
   const [tab, setTab] = useState<Tab>("dashboard");
+  const [onboardingPhase, setOnboardingPhase] = useState<"landing" | "entry">("landing");
   useKeys();
   const { isConnected, address, isConnecting, connect, disconnect } = useWallet();
   const { isSetup, clearKeys } = useKeys();
@@ -26,6 +29,12 @@ function AppContent() {
     if (t === "subens") return;
     setTab(t);
   };
+
+  useEffect(() => {
+    if (tab !== "dashboard" || !isConnected || !isSetup || hasCompletedOnboardingTour()) return;
+    const timer = setTimeout(() => runOnboardingTour(), 600);
+    return () => clearTimeout(timer);
+  }, [tab, isConnected, isSetup]);
 
   const handleConnect = async () => {
     await connect();
@@ -52,7 +61,11 @@ function AppContent() {
   if (!isSetup) {
     return (
       <div className="h-screen flex flex-col bg-black">
-        <LandingView />
+        {onboardingPhase === "landing" ? (
+          <LandingPage onEnterVault={() => setOnboardingPhase("entry")} />
+        ) : (
+          <LandingView />
+        )}
       </div>
     );
   }

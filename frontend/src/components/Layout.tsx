@@ -1,5 +1,7 @@
 import { useState, useRef, useEffect, type ReactNode } from "react";
+import { Link } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
+import { Footer } from "./Footer";
 
 export type Tab = "dashboard" | "send" | "receive" | "balance" | "history" | "subens" | "profile";
 
@@ -15,9 +17,7 @@ type LayoutProps = {
   protocolLog: ReactNode;
 };
 
-const navItems: { id: Tab; label: string }[] = [
-  { id: "dashboard", label: "Home" },
-];
+const navItems: { id: Tab; label: string }[] = [];
 
 function truncateAddress(addr: string) {
   if (addr.length < 12) return addr;
@@ -53,25 +53,31 @@ function DesktopNav({
     <header className="fixed top-0 left-0 right-0 z-20 border-b border-border bg-black">
       <div className="max-w-5xl mx-auto px-6 h-14 flex items-center justify-between">
         <div className="flex items-center gap-8">
-          <h1 className="text-sm font-semibold tracking-tight text-white">
-            opaque
-          </h1>
-          <nav className="flex items-center gap-1">
-            {navItems.map(({ id, label }) => (
-              <button
-                key={id}
-                type="button"
-                onClick={() => onTabChange(id)}
-                className={`px-3 py-1.5 rounded-md text-sm transition-colors ${
-                  tab === id
-                    ? "text-white bg-neutral-800"
-                    : "text-neutral-500 hover:text-neutral-300"
-                }`}
-              >
-                {label}
-              </button>
-            ))}
-          </nav>
+          <Link
+            to="/"
+            onClick={() => onTabChange("dashboard")}
+            className="text-sm font-semibold tracking-tight text-white hover:text-neutral-300 transition-colors"
+          >
+            Opaque
+          </Link>
+          {navItems.length > 0 && (
+            <nav className="flex items-center gap-1">
+              {navItems.map(({ id, label }) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => onTabChange(id)}
+                  className={`px-3 py-1.5 rounded-md text-sm transition-colors ${
+                    tab === id
+                      ? "text-white bg-neutral-800"
+                      : "text-neutral-500 hover:text-neutral-300"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </nav>
+          )}
         </div>
         <div className="relative flex items-center gap-3" ref={dropdownRef}>
           {!isConnected && (
@@ -90,6 +96,7 @@ function DesktopNav({
                 type="button"
                 onClick={() => setDropdownOpen((o) => !o)}
                 className="flex items-center gap-2 px-2 py-1.5 rounded-lg border border-border bg-neutral-900 hover:border-neutral-700 transition-colors"
+                data-tour="meta"
               >
                 <img
                   src={`https://robohash.org/${address}`}
@@ -238,8 +245,8 @@ export function Layout({
       <MobileNav tab={tab} onTabChange={onTabChange} />
 
       <footer className="hidden md:flex md:flex-col fixed bottom-0 left-0 right-0 z-10 h-52 border-t border-border bg-black">
-        <div className="shrink-0 py-2 text-center text-neutral-700 text-xs font-mono">
-          EIP-5564 stealth address wallet
+        <div className="shrink-0">
+          <Footer />
         </div>
         <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
           {protocolLog}

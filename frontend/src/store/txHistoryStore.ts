@@ -46,6 +46,7 @@ export const useTxHistoryStore = create<TxHistoryState>()(
             id: `tx-${chainId}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
             timestamp: Date.now(),
           };
+          // FIFO: keep newest MAX_ITEMS_PER_CHAIN; drop oldest when over limit
           const next = [newEntry, ...list].slice(0, MAX_ITEMS_PER_CHAIN);
           return {
             byChain: { ...state.byChain, [chainId]: next },

@@ -26,6 +26,7 @@ export function DashboardView({ onNavigate }: DashboardViewProps) {
           type="button"
           onClick={() => onNavigate("receive")}
           className="card flex flex-col items-center justify-center min-h-[140px] hover:border-neutral-600 transition-colors"
+          data-tour="receive"
         >
           <span className="text-3xl mb-2" aria-hidden>↓</span>
           <span className="text-lg font-semibold text-white">Receive</span>
@@ -38,6 +39,7 @@ export function DashboardView({ onNavigate }: DashboardViewProps) {
           type="button"
           onClick={() => onNavigate("balance")}
           className="px-4 py-2 rounded-lg text-sm btn-secondary"
+          data-tour="vault"
         >
           Private balance
         </button>

@@ -17,6 +17,7 @@ import {
   formatEther,
   createWalletClient,
   http,
+  encodeFunctionData,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { useVaultStore } from "../store/vaultStore";
@@ -594,6 +595,121 @@ function hexToBytes(hex: Hex | string): Uint8Array {
     out[i] = parseInt(s.slice(i * 2, i * 2 + 2), 16);
   }
   return out;
+}
+
+// -----------------------------------------------------------------------------
+// executeTokenWithdrawal: sweep ERC20 from stealth address to destination
+// -----------------------------------------------------------------------------
+const ERC20_TRANSFER_ABI = [
+  {
+    type: "function",
+    name: "transfer",
+    inputs: [
+      { name: "to", type: "address", internalType: "address" },
+      { name: "amount", type: "uint256", internalType: "uint256" },
+    ],
+    outputs: [{ name: "", type: "bool", internalType: "bool" }],
+    stateMutability: "nonpayable",
+  },
+  {
+    type: "function",
+    name: "balanceOf",
+    inputs: [{ name: "account", type: "address", internalType: "address" }],
+    outputs: [{ name: "", type: "uint256", internalType: "uint256" }],
+    stateMutability: "view",
+  },
+] as const;
+
+export async function executeTokenWithdrawal(
+  stealthPrivKey: Hex,
+  tokenAddress: Address,
+  destinationAddress: Address,
+  publicClient: PublicClient,
+  onStatus?: WithdrawalStatusCallback
+): Promise<Hash> {
+  const report = (tag: WithdrawalStepTag, label: string, detail?: string) => {
+    onStatus?.({ tag, label, detail });
+  };
+  const normalizedKey = (stealthPrivKey.startsWith("0x") ? stealthPrivKey : `0x${stealthPrivKey}`) as Hex;
+  const account = privateKeyToAccount(normalizedKey);
+
+  const chain = publicClient.chain;
+  const rpcUrl = chain?.rpcUrls?.default?.http?.[0];
+  if (!rpcUrl) throw new Error("Cannot send transaction: no RPC URL on public client chain");
+
+  report("CALC", "Reading token balance…");
+  const balance = await publicClient.readContract({
+    address: tokenAddress,
+    abi: ERC20_TRANSFER_ABI,
+    functionName: "balanceOf",
+    args: [account.address],
+  });
+  if (balance === 0n) throw new Error("Zero token balance.");
+
+  report("CALC", "Estimating gas for token transfer…");
+  let gasLimit: bigint;
+  try {
+    gasLimit = await publicClient.estimateGas({
+      account: account.address,
+      to: tokenAddress,
+      data: encodeFunctionData({
+        abi: ERC20_TRANSFER_ABI,
+        functionName: "transfer",
+        args: [destinationAddress, balance],
+      }),
+    });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    throw new Error(`Gas estimation failed: ${msg}`);
+  }
+
+  const ethBalance = await publicClient.getBalance({ address: account.address });
+  type Eip1559Fees = { maxFeePerGas: bigint; maxPriorityFeePerGas: bigint };
+  let gasPriceWei: bigint;
+  let eip1559Fees: Eip1559Fees | null = null;
+  try {
+    const fees = await publicClient.estimateFeesPerGas().catch(() => null);
+    if (fees && "maxFeePerGas" in fees && fees.maxFeePerGas != null) {
+      gasPriceWei = fees.maxFeePerGas;
+      eip1559Fees = fees as Eip1559Fees;
+    } else {
+      gasPriceWei = await publicClient.getGasPrice();
+    }
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    throw new Error(`Failed to fetch gas price: ${msg}`);
+  }
+  const totalGasCost = gasLimit * gasPriceWei;
+  if (ethBalance < totalGasCost) {
+    throw new Error("Insufficient ETH on stealth address to pay for gas.");
+  }
+
+  report("SIGN", "Signing token transfer with stealth key…");
+  const walletClient = createWalletClient({
+    account,
+    chain: chain ?? undefined,
+    transport: http(rpcUrl),
+  });
+
+  const data = encodeFunctionData({
+    abi: ERC20_TRANSFER_ABI,
+    functionName: "transfer",
+    args: [destinationAddress, balance],
+  });
+
+  report("SEND", "Broadcasting token transfer…");
+  const hash = await walletClient.sendTransaction({
+    account,
+    to: tokenAddress,
+    value: 0n,
+    data,
+    gas: gasLimit,
+    ...(eip1559Fees
+      ? { maxFeePerGas: eip1559Fees.maxFeePerGas, maxPriorityFeePerGas: eip1559Fees.maxPriorityFeePerGas }
+      : { gasPrice: gasPriceWei }),
+  });
+  report("DONE", "Token transfer sent.", hash);
+  return hash;
 }
 
 export { formatEther };

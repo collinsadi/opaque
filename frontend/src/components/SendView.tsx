@@ -3,6 +3,7 @@ import {
   createWalletClient,
   custom,
   parseEther,
+  parseUnits,
   encodeFunctionData,
   type Address,
   type Hex,
@@ -17,10 +18,25 @@ import {
   SCHEME_ID_SECP256K1,
   DEFAULT_ANNOUNCER_ADDRESS,
 } from "../lib/contracts";
+import { getSelectableAssets } from "../lib/tokens";
+import type { TokenInfo } from "../lib/tokens";
 import { ProtocolStepper } from "./ProtocolStepper";
 import type { ProtocolStep } from "./ProtocolStepper";
 import { useProtocolLog } from "../context/ProtocolLogContext";
 import { useTxHistoryStore } from "../store/txHistoryStore";
+
+const ERC20_TRANSFER_ABI = [
+  {
+    type: "function",
+    name: "transfer",
+    inputs: [
+      { name: "to", type: "address", internalType: "address" },
+      { name: "amount", type: "uint256", internalType: "uint256" },
+    ],
+    outputs: [{ name: "", type: "bool", internalType: "bool" }],
+    stateMutability: "nonpayable",
+  },
+] as const;
 
 const ANNOUNCER: Address =
   (import.meta.env.VITE_ANNOUNCER_ADDRESS as Address) || DEFAULT_ANNOUNCER_ADDRESS;
@@ -43,10 +59,13 @@ export function SendView() {
   const { isSetup } = useKeys();
   const { push: logPush } = useProtocolLog();
   const pushTx = useTxHistoryStore((s) => s.push);
-  const chainId = getAppChain().id;
+  const chain = getAppChain();
+  const chainId = chain.id;
+  const assets = getSelectableAssets(chainId);
   const [recipientMeta, setRecipientMeta] = useState("");
   const [resolvedMeta, setResolvedMeta] = useState<Hex | null>(null);
   const [resolving, setResolving] = useState(false);
+  const [selectedAsset, setSelectedAsset] = useState<TokenInfo>(() => assets[0] ?? { symbol: "ETH", name: "Ether", decimals: 18, address: null });
   const [amount, setAmount] = useState("");
   const [txHash, setTxHash] = useState<Hex | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -88,7 +107,14 @@ export function SendView() {
       return;
     }
     const with0x = meta.startsWith("0x") ? meta : "0x" + meta;
-    const value = parseEther(amount);
+    const isNative = selectedAsset.address === null;
+    let value: bigint;
+    try {
+      value = isNative ? parseEther(amount) : parseUnits(amount, selectedAsset.decimals);
+    } catch {
+      setError("Invalid amount.");
+      return;
+    }
     if (value === 0n) {
       console.log("📤 [Opaque] Send validation: zero amount");
       setError("Amount must be greater than 0.");
@@ -138,23 +164,42 @@ export function SendView() {
         addStep("ok", "One-time stealth address derived.", stealthAddress);
         logPush("wasm", `Stealth address derived: ${stealthAddress.slice(0, 14)}…`);
 
-        addStep("wait", "Signing ETH transfer… (Await user)");
-        logPush("blockchain", "Requesting wallet signature for ETH transfer");
-
-        const hash = await client.sendTransaction({
-          account: from,
-          to: stealthAddress,
-          value,
-          data: "0x",
-        });
+        let hash: Hex;
+        if (isNative) {
+          addStep("wait", "Signing ETH transfer… (Await user)");
+          logPush("blockchain", "Requesting wallet signature for ETH transfer");
+          hash = await client.sendTransaction({
+            account: from,
+            to: stealthAddress,
+            value,
+            data: "0x",
+          });
+        } else {
+          addStep("wait", `Signing ${selectedAsset.symbol} transfer… (Await user)`);
+          logPush("blockchain", `Requesting wallet signature for ${selectedAsset.symbol} transfer`);
+          const transferData = encodeFunctionData({
+            abi: ERC20_TRANSFER_ABI,
+            functionName: "transfer",
+            args: [stealthAddress, value],
+          });
+          hash = await client.sendTransaction({
+            account: from,
+            to: selectedAsset.address!,
+            value: 0n,
+            data: transferData,
+          });
+        }
         setTxHash(hash);
         setLastStep("ok");
         addStep("ok", "Transfer broadcast.");
         logPush("blockchain", `Transfer tx: ${hash.slice(0, 18)}…`);
 
-        addStep("wait", "Publishing announcement to Registry…");
+        let metadataHex = bytesToHex(metadata) as Hex;
+        if (!isNative && selectedAsset.address) {
+          metadataHex = (metadataHex + selectedAsset.address.slice(2).toLowerCase()) as Hex;
+        }
+        addStep("wait", "Publishing announcement…");
         logPush("blockchain", "Publishing announcement (view tag + ephemeral key)");
-
         const announceCalldata = encodeFunctionData({
           abi: STEALTH_ANNOUNCER_ABI,
           functionName: "announce",
@@ -162,7 +207,7 @@ export function SendView() {
             SCHEME_ID_SECP256K1,
             stealthAddress,
             bytesToHex(ephemeralPubKey) as Hex,
-            bytesToHex(metadata) as Hex,
+            metadataHex,
           ],
         });
         await client.sendTransaction({
@@ -189,7 +234,6 @@ export function SendView() {
       // Fork 2: Standard ETH address (42 chars) — use registry only if already resolved; else direct transfer (manual/ghost)
       if (isEthAddress(with0x)) {
         if (resolvedMeta) {
-          // Resolved from registry: full stealth flow (derive + send + announce)
           const metaHex = resolvedMeta;
           console.log("📤 [Opaque] Send: using registry-resolved meta-address");
           addStep("wait", "Generating ephemeral key pair…");
@@ -203,23 +247,40 @@ export function SendView() {
           addStep("ok", "One-time stealth address derived.", stealthAddress);
           logPush("wasm", `Stealth address derived: ${stealthAddress.slice(0, 14)}…`);
 
-          addStep("wait", "Signing ETH transfer… (Await user)");
-          logPush("blockchain", "Requesting wallet signature for ETH transfer");
-
-          const hash = await client.sendTransaction({
-            account: from,
-            to: stealthAddress,
-            value,
-            data: "0x",
-          });
+          let hash: Hex;
+          if (isNative) {
+            addStep("wait", "Signing ETH transfer… (Await user)");
+            logPush("blockchain", "Requesting wallet signature for ETH transfer");
+            hash = await client.sendTransaction({
+              account: from,
+              to: stealthAddress,
+              value,
+              data: "0x",
+            });
+          } else {
+            addStep("wait", `Signing ${selectedAsset.symbol} transfer… (Await user)`);
+            const transferData = encodeFunctionData({
+              abi: ERC20_TRANSFER_ABI,
+              functionName: "transfer",
+              args: [stealthAddress, value],
+            });
+            hash = await client.sendTransaction({
+              account: from,
+              to: selectedAsset.address!,
+              value: 0n,
+              data: transferData,
+            });
+          }
           setTxHash(hash);
           setLastStep("ok");
           addStep("ok", "Transfer broadcast.");
           logPush("blockchain", `Transfer tx: ${hash.slice(0, 18)}…`);
 
-          addStep("wait", "Publishing announcement to Registry…");
-          logPush("blockchain", "Publishing announcement (view tag + ephemeral key)");
-
+          let metadataHex = bytesToHex(metadata) as Hex;
+          if (!isNative && selectedAsset.address) {
+            metadataHex = (metadataHex + selectedAsset.address.slice(2).toLowerCase()) as Hex;
+          }
+          addStep("wait", "Publishing announcement…");
           const announceCalldata = encodeFunctionData({
             abi: STEALTH_ANNOUNCER_ABI,
             functionName: "announce",
@@ -227,7 +288,7 @@ export function SendView() {
               SCHEME_ID_SECP256K1,
               stealthAddress,
               bytesToHex(ephemeralPubKey) as Hex,
-              bytesToHex(metadata) as Hex,
+              metadataHex,
             ],
           });
           await client.sendTransaction({
@@ -239,7 +300,6 @@ export function SendView() {
 
           setLastStep("ok");
           addStep("done", "Complete — privacy shield active.");
-          logPush("blockchain", "Announcement published");
           pushTx({
             chainId,
             kind: "sent",
@@ -251,21 +311,33 @@ export function SendView() {
           return;
         }
 
-        // No meta-address in registry: treat as direct ETH transfer (e.g. manual ghost address)
-        console.log("📤 [Opaque] Send: direct ETH transfer (no registry / manual ghost)");
-        addStep("wait", "Signing ETH transfer… (Await user)");
-        logPush("blockchain", "Direct ETH transfer to address");
-
-        const hash = await client.sendTransaction({
-          account: from,
-          to: with0x as Address,
-          value,
-          data: "0x",
-        });
+        // No meta-address in registry: direct transfer
+        console.log("📤 [Opaque] Send: direct transfer (no registry / manual ghost)");
+        addStep("wait", isNative ? "Signing ETH transfer… (Await user)" : `Signing ${selectedAsset.symbol} transfer… (Await user)`);
+        let hash: Hex;
+        if (isNative) {
+          hash = await client.sendTransaction({
+            account: from,
+            to: with0x as Address,
+            value,
+            data: "0x",
+          });
+        } else {
+          const transferData = encodeFunctionData({
+            abi: ERC20_TRANSFER_ABI,
+            functionName: "transfer",
+            args: [with0x as Address, value],
+          });
+          hash = await client.sendTransaction({
+            account: from,
+            to: selectedAsset.address!,
+            value: 0n,
+            data: transferData,
+          });
+        }
         setTxHash(hash);
         setLastStep("ok");
         addStep("done", "Transfer sent. No on-chain announcement (direct transfer).");
-        logPush("blockchain", `Transfer tx: ${hash.slice(0, 18)}…`);
         pushTx({
           chainId,
           kind: "sent",
@@ -310,6 +382,25 @@ export function SendView() {
       <div className="space-y-4">
         <div>
           <label className="block text-sm text-neutral-500 mb-1.5">
+            Asset
+          </label>
+          <select
+            value={selectedAsset.symbol}
+            onChange={(e) => {
+              const a = assets.find((x) => x.symbol === e.target.value);
+              if (a) setSelectedAsset(a);
+            }}
+            className="input-field w-full"
+          >
+            {assets.map((a) => (
+              <option key={a.symbol} value={a.symbol}>
+                {a.symbol}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="block text-sm text-neutral-500 mb-1.5">
             Recipient
           </label>
           <input
@@ -335,12 +426,14 @@ export function SendView() {
           )}
         </div>
         <div>
-          <label className="block text-sm text-neutral-500 mb-1.5">Amount (ETH)</label>
+          <label className="block text-sm text-neutral-500 mb-1.5">
+            Amount ({selectedAsset.symbol})
+          </label>
           <input
             type="text"
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
-            placeholder="0.01"
+            placeholder={selectedAsset.address === null ? "0.01" : "100"}
             className="input-field"
           />
         </div>
