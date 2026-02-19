@@ -1,0 +1,65 @@
+@import "tailwindcss";
+
+@theme {
+  --font-mono: "JetBrains Mono", "Fira Code", "SF Mono", ui-monospace, monospace;
+  --color-charcoal: #1c1c1e;
+  --color-slate: #2c2c2e;
+  --color-slate-light: #3a3a3c;
+  --color-cyan: #00e5ff;
+  --color-cyan-dim: #00b8d4;
+  --color-frost: rgba(255, 255, 255, 0.06);
+  --color-frost-border: rgba(255, 255, 255, 0.08);
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: linear-gradient(160deg, #0d0d0f 0%, #1a1a1e 50%, #121214 100%);
+  color: #e8e8ea;
+  font-family: var(--font-mono), system-ui, sans-serif;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+.glass {
+  background: rgba(28, 28, 30, 0.6);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--color-frost-border);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+}
+
+.glass-card {
+  background: rgba(28, 28, 30, 0.6);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--color-frost-border);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  border-radius: 1rem;
+  padding: 1.5rem;
+}
+
+.font-mono {
+  font-family: var(--font-mono);
+}
+
+.text-address {
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  letter-spacing: 0.02em;
+  word-break: break-all;
+}
+
+.accent-cyan {
+  color: #00e5ff;
+}
+
+.border-cyan {
+  border-color: #00e5ff;
+}
+
+.bg-cyan\/10 {
+  background-color: rgba(0, 229, 255, 0.1);
+}

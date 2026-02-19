@@ -1,0 +1,402 @@
+/**
+ * Opaque Cash Phase 3: Stealth fund discovery and spending lifecycle.
+ * - StealthScanner: historical sync + real-time Announcement listener + WASM filter
+ * - VaultStore: persistent owned stealth addresses (see store/vaultStore)
+ * - getStealthWallet / withdrawStealthFunds: key reconstruction and withdrawal
+ *
+ * Security: Master private keys must be passed in at runtime; never stored in localStorage.
+ */
+
+import {
+  type Address,
+  type Hash,
+  type Hex,
+  type PublicClient,
+  type Chain,
+  getAddress,
+  formatEther,
+  createWalletClient,
+  http,
+} from "viem";
+import { privateKeyToAccount } from "viem/accounts";
+import { useVaultStore } from "../store/vaultStore";
+import { deployedAddresses } from "../contracts/deployedAddresses";
+import { STEALTH_ANNOUNCER_ABI, SCHEME_ID_SECP256K1 } from "./contracts";
+
+// -----------------------------------------------------------------------------
+// WASM module type (extends useOpaqueWasm interface)
+// -----------------------------------------------------------------------------
+
+export interface StealthLifecycleWasm {
+  check_announcement_view_tag_wasm: (
+    view_tag: number,
+    view_privkey_bytes: Uint8Array,
+    ephemeral_pubkey_bytes: Uint8Array
+  ) => string;
+  check_announcement_wasm: (
+    announcement_stealth_address: string,
+    view_tag: number,
+    view_privkey_bytes: Uint8Array,
+    spend_pubkey_bytes: Uint8Array,
+    ephemeral_pubkey_bytes: Uint8Array
+  ) => boolean;
+  reconstruct_signing_key_wasm: (
+    master_spend_priv_bytes: Uint8Array,
+    master_view_priv_bytes: Uint8Array,
+    ephemeral_pubkey_bytes: Uint8Array
+  ) => Uint8Array;
+}
+
+// -----------------------------------------------------------------------------
+// Scanning progress observable
+// -----------------------------------------------------------------------------
+
+export type ScanStatus = "idle" | "syncing" | "watching" | "error";
+
+export type ScanningProgress = {
+  status: ScanStatus;
+  /** Current block when syncing (optional) */
+  fromBlock: bigint | null;
+  toBlock: bigint | null;
+  lastProcessedBlock: bigint | null;
+  /** Total blocks to sync (for progress %) */
+  totalBlocks: bigint | null;
+  error: string | null;
+};
+
+type ProgressListener = (progress: ScanningProgress) => void;
+
+// -----------------------------------------------------------------------------
+// Keys supplier: in-memory only, never persisted
+// -----------------------------------------------------------------------------
+
+export type MasterKeys = {
+  viewPrivKey: Uint8Array; // 32 bytes
+  spendPrivKey: Uint8Array; // 32 bytes
+  spendPubKey: Uint8Array; // 33 bytes compressed
+};
+
+// -----------------------------------------------------------------------------
+// StealthScanner
+// -----------------------------------------------------------------------------
+
+const CHUNK_SIZE = 2000;
+
+export class StealthScanner {
+  private readonly publicClient: PublicClient;
+  private readonly announcerAddress: Address;
+  private readonly chain: Chain;
+  private readonly wasm: StealthLifecycleWasm;
+  private readonly getKeys: () => MasterKeys;
+  private unsubscribeWatch: (() => void) | null = null;
+  private progress: ScanningProgress = {
+    status: "idle",
+    fromBlock: null,
+    toBlock: null,
+    lastProcessedBlock: null,
+    totalBlocks: null,
+    error: null,
+  };
+  private listeners = new Set<ProgressListener>();
+
+  constructor(opts: {
+    publicClient: PublicClient;
+    announcerAddress?: Address;
+    chain: Chain;
+    wasm: StealthLifecycleWasm;
+    getKeys: () => MasterKeys;
+  }) {
+    this.publicClient = opts.publicClient;
+    this.announcerAddress = opts.announcerAddress ?? (deployedAddresses.StealthAddressAnnouncer as Address);
+    this.chain = opts.chain;
+    this.wasm = opts.wasm;
+    this.getKeys = opts.getKeys;
+    console.log("👁️ [Opaque] StealthScanner created", { announcer: this.announcerAddress, chainId: this.chain.id });
+  }
+
+  getChain(): Chain {
+    return this.chain;
+  }
+
+  /** Subscribe to scanning progress updates */
+  onProgress(listener: ProgressListener): () => void {
+    this.listeners.add(listener);
+    listener(this.progress);
+    return () => this.listeners.delete(listener);
+  }
+
+  private setProgress(update: Partial<ScanningProgress>) {
+    this.progress = { ...this.progress, ...update };
+    this.listeners.forEach((l) => l(this.progress));
+  }
+
+  /**
+   * Historical sync: fetch Announcement logs in chunks to avoid RPC rate limits.
+   * fromBlock/toBlock optional; if omitted uses lastSyncedBlock -> current, or 0 -> current.
+   */
+  async updateVault(fromBlock?: bigint, toBlock?: bigint): Promise<void> {
+    const to = toBlock ?? (await this.publicClient.getBlockNumber());
+    const lastSynced = useVaultStore.getState().lastSyncedBlock;
+    const from = fromBlock ?? (lastSynced !== null ? lastSynced + 1n : 0n);
+    console.log("👁️ [Opaque] updateVault", { from: String(from), to: String(to), lastSynced: lastSynced != null ? String(lastSynced) : null });
+    if (from > to) {
+      console.log("👁️ [Opaque] Nothing to sync, already up to date");
+      this.setProgress({ status: "watching", error: null });
+      return;
+    }
+
+    this.setProgress({
+      status: "syncing",
+      fromBlock: from,
+      toBlock: to,
+      totalBlocks: to - from + 1n,
+      lastProcessedBlock: null,
+      error: null,
+    });
+
+    const keys = this.getKeys();
+    const viewPriv = keys.viewPrivKey;
+    const spendPub = keys.spendPubKey;
+    let current = from;
+    const announcer = this.announcerAddress;
+
+    try {
+      while (current <= to) {
+        const end = current + BigInt(CHUNK_SIZE) - 1n > to ? to : current + BigInt(CHUNK_SIZE) - 1n;
+        const logs = await this.publicClient.getContractEvents({
+          address: announcer,
+          abi: STEALTH_ANNOUNCER_ABI as readonly unknown[],
+          eventName: "Announcement",
+          fromBlock: current,
+          toBlock: end,
+        });
+        if (logs.length > 0) console.log("👁️ [Opaque] Chunk logs", { fromBlock: String(current), toBlock: String(end), count: logs.length });
+
+        for (const log of logs) {
+          this.processDecodedLog(log, viewPriv, spendPub);
+        }
+
+        current = end + 1n;
+        useVaultStore.getState().setLastSyncedBlock(end);
+        this.setProgress({ lastProcessedBlock: end });
+      }
+
+      console.log("👁️ [Opaque] Historical sync done ✅");
+      this.setProgress({ status: "watching", error: null });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error("⚠️ [Opaque] updateVault error", { error: msg });
+      this.setProgress({ status: "error", error: msg });
+      throw err;
+    }
+  }
+
+  /**
+   * Start real-time listener for new Announcement events.
+   */
+  startWatching(): void {
+    if (this.unsubscribeWatch) {
+      console.log("👁️ [Opaque] Already watching, skip");
+      return;
+    }
+    console.log("👁️ [Opaque] Starting watchContractEvent");
+    const keys = this.getKeys();
+    const viewPriv = keys.viewPrivKey;
+    const spendPub = keys.spendPubKey;
+
+    this.unsubscribeWatch = this.publicClient.watchContractEvent({
+      address: this.announcerAddress,
+      abi: STEALTH_ANNOUNCER_ABI as readonly unknown[],
+      eventName: "Announcement",
+      onLogs: (logs) => {
+        if (logs.length > 0) console.log("👁️ [Opaque] New Announcement logs", { count: logs.length });
+        logs.forEach((log) => this.processDecodedLog(log, viewPriv, spendPub));
+      },
+    });
+    this.setProgress({ status: "watching", error: null });
+    console.log("👁️ [Opaque] Watching ✅");
+  }
+
+  stopWatching(): void {
+    if (this.unsubscribeWatch) {
+      this.unsubscribeWatch();
+      this.unsubscribeWatch = null;
+      console.log("👁️ [Opaque] Stopped watching");
+    }
+    this.setProgress({ status: "idle" });
+  }
+
+  private processDecodedLog(
+    log: { args?: { schemeId?: bigint; stealthAddress?: Address; ephemeralPubKey?: Hex; metadata?: Hex }; blockNumber?: bigint | null; transactionHash?: Hash | null },
+    viewPrivKey: Uint8Array,
+    spendPubKey: Uint8Array
+  ): void {
+    const args = log.args;
+    if (!args || args.schemeId !== SCHEME_ID_SECP256K1) return;
+
+    const stealthAddress = args.stealthAddress;
+    const ephemeralPubKeyHex = args.ephemeralPubKey;
+    const metadata = args.metadata;
+    if (!stealthAddress || !ephemeralPubKeyHex) return;
+
+    const ephemeralPubKey = hexToBytes(ephemeralPubKeyHex);
+    if (ephemeralPubKey.length !== 33) return;
+
+    const viewTag = metadata && metadata.length >= 2 ? parseInt(metadata.slice(2, 4), 16) : 0;
+    const viewTagResult = this.wasm.check_announcement_view_tag_wasm(
+      viewTag,
+      viewPrivKey,
+      ephemeralPubKey
+    );
+    if (viewTagResult === "NoMatch") return;
+
+    const isOurs = this.wasm.check_announcement_wasm(
+      getAddress(stealthAddress),
+      viewTag,
+      viewPrivKey,
+      spendPubKey,
+      ephemeralPubKey
+    );
+    if (!isOurs) return;
+
+    const addr = getAddress(stealthAddress);
+    console.log("📥 [Opaque] Announcement is ours, upserting vault entry", { stealthAddress: addr, block: log.blockNumber?.toString(), txHash: (log.transactionHash ?? "0x").slice(0, 18) + "…" });
+    useVaultStore.getState().upsertEntry({
+      stealthAddress: addr,
+      ephemeralPubKeyHex: ephemeralPubKeyHex as Hex,
+      blockNumber: log.blockNumber ?? 0n,
+      txHash: (log.transactionHash ?? "0x") as Hash,
+      amountWei: 0n,
+      isSpent: false,
+    });
+  }
+}
+
+// -----------------------------------------------------------------------------
+// refreshBalances: multicall getBalance for all vault addresses
+// -----------------------------------------------------------------------------
+
+export async function refreshBalances(publicClient: PublicClient): Promise<void> {
+  const entries = useVaultStore.getState().entries;
+  const addresses = entries.map((e) => e.stealthAddress);
+  if (addresses.length === 0) {
+    console.log("💰 [Opaque] refreshBalances: no entries, skip");
+    return;
+  }
+  console.log("💰 [Opaque] refreshBalances", { count: addresses.length });
+
+  const balances = await Promise.all(
+    addresses.map((addr) => publicClient.getBalance({ address: addr }))
+  );
+  useVaultStore.getState().setBalances(
+    addresses.map((addr, i) => ({ stealthAddress: addr, amountWei: balances[i] }))
+  );
+  console.log("💰 [Opaque] Balances updated ✅", addresses.map((a, i) => ({ addr: a.slice(0, 10) + "…", wei: String(balances[i]) })));
+}
+
+// -----------------------------------------------------------------------------
+// getStealthWallet: reconstruct one-time key and return viem account
+// -----------------------------------------------------------------------------
+
+export function getStealthWallet(
+  stealthAddress: Address,
+  wasm: StealthLifecycleWasm,
+  masterKeys: MasterKeys
+): ReturnType<typeof privateKeyToAccount> {
+  const entry = useVaultStore.getState().getEntry(stealthAddress);
+  if (!entry) {
+    console.error("⚠️ [Opaque] getStealthWallet: entry not found", { stealthAddress });
+    throw new Error(`Stealth address ${stealthAddress} not found in vault`);
+  }
+  console.log("🔐 [Opaque] Reconstructing stealth wallet", { stealthAddress: stealthAddress.slice(0, 14) + "…" });
+
+  const ephemeralPubKey = hexToBytes(entry.ephemeralPubKeyHex);
+  if (ephemeralPubKey.length !== 33) {
+    throw new Error("Invalid ephemeral public key in vault entry");
+  }
+
+  const stealthPrivKey = wasm.reconstruct_signing_key_wasm(
+    masterKeys.spendPrivKey,
+    masterKeys.viewPrivKey,
+    ephemeralPubKey
+  );
+  const hexKey = ("0x" + Array.from(stealthPrivKey)
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("")) as Hex;
+  return privateKeyToAccount(hexKey);
+}
+
+// -----------------------------------------------------------------------------
+// withdrawStealthFunds: sign and send; relayer hook if no gas
+// -----------------------------------------------------------------------------
+
+export type RelayerHint = "no_gas" | "ok";
+
+export async function withdrawStealthFunds(
+  stealthAddress: Address,
+  destinationAddress: Address,
+  publicClient: PublicClient,
+  wasm: StealthLifecycleWasm,
+  masterKeys: MasterKeys,
+  opts?: {
+    /** If provided, called when stealth address has 0 ETH (no gas for tx). Return true to abort. */
+    onNoGas?: (hint: RelayerHint) => boolean | void;
+    /** Optional gas limit override */
+    gas?: bigint;
+  }
+): Promise<Hash> {
+  console.log("📤 [Opaque] withdrawStealthFunds", { stealth: stealthAddress.slice(0, 14) + "…", to: destinationAddress.slice(0, 14) + "…" });
+  const entry = useVaultStore.getState().getEntry(stealthAddress);
+  if (!entry) {
+    console.error("⚠️ [Opaque] withdrawStealthFunds: entry not found", { stealthAddress });
+    throw new Error(`Stealth address ${stealthAddress} not found in vault`);
+  }
+
+  const balance = entry.amountWei;
+  if (balance === 0n) {
+    const abort = opts?.onNoGas?.("no_gas");
+    if (abort === true) {
+      throw new Error("Withdrawal aborted: stealth address has 0 ETH for gas. Use a relayer or fund the address.");
+    }
+    // Caller may still want to try (e.g. relayer will pay); we warn via callback only.
+  }
+
+  const account = getStealthWallet(stealthAddress, wasm, masterKeys);
+  const chain = publicClient.chain;
+  const rpcUrl = chain?.rpcUrls?.default?.http?.[0];
+  if (!rpcUrl) {
+    throw new Error("Cannot send transaction: no RPC URL on public client chain");
+  }
+  const walletClient = createWalletClient({
+    account,
+    chain: chain ?? undefined,
+    transport: http(rpcUrl),
+  });
+
+  const hash = await walletClient.sendTransaction({
+    account,
+    to: destinationAddress,
+    value: balance,
+    gas: opts?.gas,
+  });
+
+  console.log("📤 [Opaque] Withdrawal tx sent ✅", { hash });
+  useVaultStore.getState().markSpent(stealthAddress);
+  return hash;
+}
+
+// -----------------------------------------------------------------------------
+// Helpers
+// -----------------------------------------------------------------------------
+
+function hexToBytes(hex: Hex | string): Uint8Array {
+  const s = typeof hex === "string" && hex.startsWith("0x") ? hex.slice(2) : hex;
+  const len = s.length / 2;
+  const out = new Uint8Array(len);
+  for (let i = 0; i < len; i++) {
+    out[i] = parseInt(s.slice(i * 2, i * 2 + 2), 16);
+  }
+  return out;
+}
+
+export { formatEther };
