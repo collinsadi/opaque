@@ -1,182 +1,258 @@
 # Opaque Cash
 
-A stealth-address wallet built on **EIP-5564** (Stealth Addresses) and a **Stealth Meta-Address Registry**. Users receive ETH at one-time stealth addresses derived from a single “meta-address”; senders can target recipients either by meta-address or by their standard Ethereum address (resolved via the Registry).
+**Opaque Cash** is a stealth-address wallet and privacy protocol built on **EIP-5564** (Stealth Addresses) and a **Stealth Meta-Address Registry**. Users receive ETH and ERC-20 tokens at one-time stealth addresses derived from a single meta-address; senders can target recipients by meta-address or by standard Ethereum address (resolved via the Registry).
 
-This document explains **how the system works step by step**, from the moment a user visits the platform.
-
----
-
-## Table of contents
-
-1. [High-level flow](#1-high-level-flow)
-2. [When the user first visits](#2-when-the-user-first-visits)
-3. [Setup: deriving stealth keys](#3-setup-deriving-stealth-keys)
-4. [Registry: linking your ETH address to your meta-address](#4-registry-linking-your-eth-address-to-your-meta-address)
-5. [Sending: recipient by meta-address or by ETH address](#5-sending-recipient-by-meta-address-or-by-eth-address)
-6. [Receiving and viewing private balance](#6-receiving-and-viewing-private-balance)
-7. [Where the Stealth Meta-Address Registry is used](#7-where-the-stealth-meta-address-registry-is-used)
-8. [Contracts and deployment](#8-contracts-and-deployment)
+This document is the authoritative technical reference for the protocol architecture, system components, local setup, mainnet deployment, and user experience.
 
 ---
 
-## 1. High-level flow
+## Table of Contents
 
-- **Recipient** signs a message once → app derives **viewing** and **spending** keys → public keys form a **66-byte stealth meta-address** (shareable).
-- Recipient can **register** that meta-address on-chain under their **standard ETH address** so others can send using only the ETH address.
-- **Sender** enters either a 66-byte meta-address or a 42-char ETH address → if ETH address, app **resolves** meta-address from the Registry → app derives a **one-time stealth address** and sends ETH there, then **announces** the ephemeral data on-chain.
-- **Recipient**’s app **scans** announcements, checks ownership with the viewing key, **reconstructs** the one-time private key, and shows **private balance** (and sweep when implemented).
-
----
-
-## 2. When the user first visits
-
-1. User opens the frontend (e.g. Vite dev server or production build).
-2. **Header**: Tabs **Setup**, **Register**, **Send**, **Private balance**; **Connect MetaMask** (or similar) if not connected.
-3. **Wallet connection** (`useWallet`):
-   - The app checks for an injected provider (`window.ethereum`).
-   - It requests accounts (e.g. `eth_requestAccounts`). If at least one account is returned, the user is “connected”; the current address is stored.
-   - Account/chain changes are listened for so the UI stays in sync.
-4. **Key state**: No keys exist yet. `KeysContext` holds `stealthMetaAddressHex: null`, `isSetup: false`, `masterKeys: null`.
-5. **Default tab** is **Setup**. The user must complete Setup before they can meaningfully use Register or Send (and before their private balance can be decrypted).
+1. [Protocol Architecture & Cryptography](#1-protocol-architecture--cryptography)
+2. [System Components](#2-system-components)
+3. [Step-by-Step Local Setup](#3-step-by-step-local-setup)
+4. [Mainnet & Scaling Guide](#4-mainnet--scaling-guide)
+5. [User Experience & Security](#5-user-experience--security)
+6. [Contracts and Deployment Reference](#6-contracts-and-deployment-reference)
 
 ---
 
-## 3. Setup: deriving stealth keys
+## 1. Protocol Architecture & Cryptography
 
-**Goal:** Derive a **stealth meta-address** (and the viewing/spending keys) from the user’s wallet, **without** storing the keys on-chain. Keys exist only in the session.
+### 1.1 Dual-Key Stealth Address Protocol (DKSAP) — EIP-5564
 
-**Steps:**
+Opaque Cash implements the **Dual-Key Stealth Address Protocol** as specified in [EIP-5564](https://eips.ethereum.org/EIPS/eip-5564). Each recipient has a **stealth meta-address** composed of two public keys (66 bytes total):
 
-1. User is on **Setup** and clicks **“Connect wallet & sign to derive keys”**.
-2. **SetupView** uses a viem **wallet client** (e.g. MetaMask) to:
-   - Resolve the current account.
-   - Call **`signMessage`** with a fixed string, e.g.  
-     `"Sign this message to derive your Opaque Cash stealth keys. This does not approve any transaction."`
-3. The wallet returns a **signature** (e.g. 65-byte ECDSA). The app **does not** send this to any server; it is used only in the browser.
-4. **KeysContext.setFromSignature(signature)**:
-   - **Key derivation** (`lib/stealth.ts`):  
-     The signature is used as entropy. **HKDF** (SHA-256, domain `"opaque-cash-v1"`) expands it to 64 bytes, split into:
-     - **Viewing private key** (32 bytes)
-     - **Spending private key** (32 bytes)
-   - **Public keys**: secp256k1 compressed public keys are computed for both (33 bytes each).
-   - **Stealth meta-address**: `metaAddress = viewPubKey || spendPubKey` (66 bytes). Encoded as hex (0x + 132 hex chars), this is **stealthMetaAddressHex**.
-   - **KeysContext** stores:
-     - `stealthMetaAddressHex` (to show and to register)
-     - `masterKeys`: `viewPrivKey`, `spendPrivKey`, `spendPubKey` (for scanning and spending)
-     - `isSetup: true`
-5. Setup view then shows **“Your Stealth Meta-Address”** so the user can copy it. They can share this with senders, or (next step) register it so senders can use their ETH address instead.
+- **Viewing public key** \(V\) — used to derive a shared secret with the sender’s ephemeral key; enables the recipient to *detect* incoming transfers.
+- **Spending public key** \(S\) — used together with the shared secret to derive the one-time **stealth address** \(P\) where funds are sent.
 
-**Important:** Keys are **in-memory only**; they are lost on refresh unless you add persistence (not in this baseline).
+The meta-address is encoded as **compressed(V) || compressed(S)** (33 + 33 bytes), typically shared as a 0x-prefixed hex string (132 hex chars).
 
----
+### 1.2 Key Roles
 
-## 4. Registry: linking your ETH address to your meta-address
+| Key | Role | Use |
+|-----|------|-----|
+| **Spending key** (private) | Sweeping / spending | Used with the shared secret to derive the **one-time private key** for the stealth address. Required to sign withdrawals. |
+| **Viewing key** (private) | Scanning | Used with the ephemeral public key from announcements to compute the same shared secret and verify ownership. Enables filtering and key reconstruction without exposing the spending key. |
 
-**Goal:** Store on-chain the binding **“this ETH address → this 66-byte stealth meta-address”** so senders can resolve a meta-address from a standard address.
+Keys are derived once from a wallet signature (see [User Experience & Security](#5-user-experience--security)) and are kept in-memory in the app; they are not stored on-chain.
 
-**Where it happens:**
+### 1.3 Shared Secret and One-Time Stealth Address
 
-- **Reads**: `frontend/src/lib/registry.ts` — `resolveMetaAddress(address)` and `isRegistered(address)`.
-- **Writes**: `frontend/src/components/RegistrationView.tsx` — user clicks **Register** and sends a transaction to the Registry contract.
+Sender and recipient both compute the same **shared secret** using Elliptic Curve Diffie-Hellman (ECDH) on the secp256k1 curve:
 
-**Steps:**
+1. **Sender** generates an ephemeral key pair \((r, R)\) and computes:
+   - **Shared secret (point):** \(S_{point} = r \cdot V\) (ephemeral private key × recipient’s viewing public key).
+   - The shared secret is encoded as the **compressed curve point** (33 bytes), then hashed with **Keccak-256** to obtain \(s_h\) (32 bytes) per EIP-5564.
 
-1. User opens the **Register** tab. They must be **Setup** (have a derived meta-address) and **connected** (have an ETH address).
-2. **RegistrationView** calls **`isRegistered(address)`**:
-   - In **registry.ts**, this calls the Registry contract’s **`stealthMetaAddressOf(registrant, schemeId)`** (schemeId = 1 for secp256k1) via a viem **public client** (RPC read).
-   - The contract returns the stored 66-byte meta-address for that (address, schemeId), or empty.
-   - If the returned bytes length is 66, the user is **registered**.
-3. **If already registered:** The UI shows “You’re already registered…” and does **not** show the Register button.
-4. **If not registered:** The UI shows a **Register** button. On click:
-   - **RegistrationView** builds calldata for **`registerKeys(schemeId, stealthMetaAddress)`** (ABI and address from `registry.ts` / `deployedAddresses`).
-   - It uses a viem **wallet client** to **send a transaction** to **`REGISTRY_ADDRESS`** with that calldata (value 0).
-   - The **Registry contract** stores the mapping `(msg.sender, schemeId) → stealthMetaAddress`. So the “registrant” is the connected wallet address.
-5. After a successful tx, the view sets “registered” to true and shows the tx hash.
+2. **View tag:** \(v = s_h[0]\) (first byte of the hash). Emitted in announcement metadata so the recipient’s scanner can **filter** announcements without performing full EC math for non-matching entries (~255/256 of them).
 
-**Result:** Anyone can now call **`stealthMetaAddressOf(yourEthAddress, 1)`** and get your 66-byte meta-address to send to.
+3. **Stealth public key and address:**
+   - \(S_h = (s_h \bmod n) \cdot G\) (scalar multiplication on the curve generator).
+   - \(P_{stealth} = S + S_h\) (point addition: spending public key + derived point).
+   - **Stealth address** = last 20 bytes of `Keccak256(uncompressed(P_stealth))`, formatted as an EIP-55 Ethereum address.
+
+4. **Recipient** (with viewing key \(v_{priv}\) and spending key \(s_{priv}\)):
+   - From each announcement: ephemeral public key \(R\), view tag, stealth address.
+   - **Shared secret:** \(v_{priv} \cdot R\) (same curve point as sender’s \(r \cdot V\)).
+   - Same hash → \(s_h\), same \(S_h\), same \(P_{stealth}\) → can verify the announced stealth address and derive **one-time private key** \(p_{stealth} = s_{priv} + (s_h \bmod n)\).
+
+This ensures **unlinkability**: each payment uses a unique address; only the recipient with both keys can see and spend it.
 
 ---
 
-## 5. Sending: recipient by meta-address or by ETH address
+## 2. System Components
 
-**Goal:** Send ETH to a **one-time stealth address** derived from the recipient’s meta-address, and **announce** the data needed for the recipient to detect and spend it.
+### 2.1 Rust WASM Core
 
-**Where the Registry is used:** Only when the sender enters a **42-character ETH address**. Then the app **resolves** the meta-address via the Registry before deriving the stealth address.
+The **scanner** is implemented in **Rust** and compiled to WebAssembly for use in the browser.
 
-**Steps:**
+- **Why Rust:** secp256k1 arithmetic (ECDH, point addition, scalar multiplication) is performance-critical. Rust provides predictable performance and memory safety; the `k256` crate offers auditable, constant-time-friendly elliptic curve operations. JavaScript-only implementations are possible but slower for bulk scanning.
+- **wasm-pack** builds the crate with target `web`, producing:
+  - A WASM binary and JS/TS bindings.
+  - Exposed functions such as `check_announcement_view_tag_wasm`, `check_announcement_wasm`, and `reconstruct_signing_key_wasm` for view-tag filtering, ownership check, and one-time key reconstruction.
 
-1. User is on **Send**, has completed Setup, and enters a **recipient** and an **amount**.
-2. **Recipient input** can be:
-   - **Direct 66-byte meta-address** (0x02 or 0x03 + 132 hex chars), or  
-   - **Standard ETH address** (0x + 40 hex chars).
-3. **If the user types an ETH address:**
-   - **SendView** runs a **useEffect** that checks if the trimmed input is a valid 42-char address.
-   - If yes, it calls **`resolveMetaAddress(address)`** from **registry.ts**:
-     - Normalizes the address (viem `getAddress`).
-     - Uses a viem **public client** to call **`stealthMetaAddressOf(registrant, SCHEME_ID_SECP256K1)`** on the **Registry** contract.
-     - Returns the 66-byte meta-address hex or `null` if not registered.
-   - The result is stored in **resolvedMeta**. The UI shows “Resolving from registry…” and then “Resolved meta-address: 0x…” when successful.
-4. **On Send click**, the app decides the effective meta-address:
-   - If input is a **direct meta-address**, use it as-is.
-   - If input is an **ETH address**, use **resolvedMeta**; if it’s null (e.g. not registered), show an error and do not send.
-5. **Stealth address derivation** (`lib/stealth.ts` — `computeStealthAddressAndViewTag`):
-   - Parse the 66-byte meta-address into **view pub key** (33 bytes) and **spend pub key** (33 bytes).
-   - Generate a random **ephemeral key pair** (r, R).
-   - **Shared secret** = r × viewPubKey (ECDH). Hash with **Keccak-256** → **s_h**; **view tag** = first byte of hash (used later for filtering).
-   - **Stealth public key** = spendPubKey + (s_h mod n)×G. **Stealth address** = last 20 bytes of Keccak256(uncompressed(stealth pub key)) (EIP-55).
-   - **Metadata** = 1 byte (view tag).
-6. **Two transactions** are sent (wallet client):
-   - **1)** Send **ETH** to the **stealth address** (value = amount, data = 0x).
-   - **2)** Call **Announcer** contract **`announce(schemeId, stealthAddress, ephemeralPubKey, metadata)`** so the recipient’s scanner can find the announcement and derive the one-time key.
+The frontend loads the WASM module from `/pkg/cryptography.js` and uses it inside `StealthScanner` and the Private Balance view so that heavy crypto runs in the WASM layer while the UI stays responsive.
 
-**Result:** ETH sits at the one-time stealth address; only the recipient (with viewing + spending keys) can detect it and derive the private key for that address.
+### 2.2 Smart Contracts
+
+| Contract | Purpose |
+|----------|---------|
+| **StealthAddressAnnouncer.sol** | **Event logging.** Singleton that emits `Announcement(schemeId, stealthAddress, caller, ephemeralPubKey, metadata)` when a sender announces a stealth transfer. One deployment per chain; scanners subscribe to this single log source. `metadata` must have the view tag as the first byte (EIP-5564). |
+| **StealthMetaAddressRegistry.sol** | **Public key directory.** Maps `(registrant address, schemeId) → 66-byte stealth meta-address`. Exposes `stealthMetaAddressOf(registrant, schemeId)` for lookup and `registerKeys(schemeId, stealthMetaAddress)` (and optional `registerKeysOnBehalf` with EIP-712) for registration. schemeId 1 = secp256k1 (EIP-5564). |
+
+See [Contracts and Deployment Reference](#6-contracts-and-deployment-reference) for deployment and addresses.
+
+### 2.3 Frontend Portfolio
+
+- **Asset-centric UI:** Balances and sends are organized by **asset** (ETH, USDC, USDT, etc.). The Private Balance view aggregates per stealth address and per token; Send allows choosing asset and amount with multi-token support.
+- **Multi-token support:** Native ETH plus configurable ERC-20 tokens per chain (see `frontend/src/lib/tokens.ts`). Mock ERC-20s (USDC, USDT) are deployed for local dev; mainnet uses real token addresses.
+- **Manual Ghost Address system:** Users can generate a **one-time stealth address + ephemeral key** without an on-chain announcement (“Receive” → “Manual Ghost Address”). These entries are stored **locally** (e.g. `localStorage` via Zustand persist). The app can still check balances and sweep those addresses because it holds the ephemeral key for key reconstruction. This supports “share this address once, no announcement” flows; data is device-specific and not recoverable from protocol state alone.
 
 ---
 
-## 6. Receiving and viewing private balance
+## 3. Step-by-Step Local Setup
 
-**Goal:** Show the user which stealth addresses received funds and allow them to see (and eventually sweep) the balance.
+### 3.1 Prerequisites
 
-**Steps:**
+- **Node.js** and npm (or equivalent)
+- **Rust** toolchain: [rustup.rs](https://rustup.rs/)
+- **wasm-pack:** `cargo install wasm-pack`
+- **Hardhat** (in `infra/`): contracts and deploy script
 
-1. User opens **Private balance** tab. The app loads the **WASM** module (for key reconstruction) and, if Setup is done, has access to **masterKeys** (view + spend private keys and spend public key).
-2. **Fetching announcements:** The app uses a viem **public client** to call **`getLogs`** on the **StealthAddressAnnouncer** contract for the **Announcement** event (schemeId, stealthAddress, caller, ephemeralPubKey, metadata).
-3. For each log, the app has: **stealth address**, **ephemeral public key**, **view tag** (from metadata).
-4. **Filtering / ownership** (when implemented): For each announcement, the app can use the WASM **check_announcement** (or equivalent) with the user’s **viewPrivKey** and **spendPubKey** to see if this announcement is for them (view tag and key derivation must match). In the current code, filtering may be relaxed to show all announcements for demo purposes.
-5. **Key reconstruction:** For “owned” announcements, the app uses WASM **reconstruct_signing_key** (spend priv, view priv, ephemeral pub key) to get the **one-time private key** for that stealth address.
-6. **Balance:** The app calls **`getBalance`** for each such stealth address and displays the list with balances and option to **Sweep** (sweep flow may be stubbed).
+### 3.2 Build the WASM Core
 
-**Result:** The user sees a list of stealth addresses that received funds and their balances, and can reveal the one-time private key for sweeping.
+From the **project root**:
+
+```bash
+cd scanner
+wasm-pack build --target web --out-dir ./pkg
+```
+
+Then copy the built package into the frontend so it can be served:
+
+```bash
+# From project root
+cp -r scanner/pkg frontend/public/pkg
+```
+
+For release builds (smaller, faster):
+
+```bash
+cd scanner && wasm-pack build --target web --out-dir ./pkg --release
+cp -r scanner/pkg frontend/public/pkg
+```
+
+### 3.3 Start a Local Hardhat Node
+
+In a dedicated terminal:
+
+```bash
+cd infra
+npm install
+npx hardhat compile
+npx hardhat node
+```
+
+Leave this running (default RPC: `http://127.0.0.1:8545`).
+
+### 3.4 Deploy Contracts and Mocks
+
+With the local node running, from **another terminal**:
+
+```bash
+cd infra
+npm run deploy:scripts
+```
+
+Or explicitly:
+
+```bash
+npx hardhat compile
+RPC_URL=http://127.0.0.1:8545 tsx scripts/deploy.ts
+```
+
+This script:
+
+- Deploys **StealthMetaAddressRegistry** and **StealthAddressAnnouncer**
+- Deploys **MockERC20** instances for USDC and USDT
+- Writes **`frontend/src/contracts/deployedAddresses.ts`** with chainId and contract addresses
+- Copies ABIs to **`frontend/src/contracts/abis/`**
+
+### 3.5 Launch the Vite/React Frontend
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Open the URL shown (e.g. `http://localhost:5173`). Ensure MetaMask (or another injected provider) is pointed at the same chain (e.g. chainId 31337 for Hardhat) and that the frontend’s chain config matches.
 
 ---
 
-## 7. Where the Stealth Meta-Address Registry is used
+## 4. Mainnet & Scaling Guide
 
-| Location | What happens |
-|--------|----------------|
-| **`frontend/src/lib/registry.ts`** | **Lookup (read only).** `resolveMetaAddress(address)` and `isRegistered(address)` call the Registry’s **`stealthMetaAddressOf(registrant, schemeId)`** via a viem **public client** (RPC). Contract address comes from **`deployedAddresses.StealthMetaAddressRegistry`**. Returns the 66-byte meta-address hex or null / boolean. |
-| **`frontend/src/components/RegistrationView.tsx`** | **Registration (write).** On load, calls **`isRegistered(address)`** to decide whether to show “already registered” or the Register button. On Register click, **encodes** **`registerKeys(schemeId, stealthMetaAddressHex)`** and **sends a transaction** to **`REGISTRY_ADDRESS`** (same as above) so the user’s wallet signs and submits the write. |
-| **`frontend/src/components/SendView.tsx`** | **Lookup only.** When the recipient input is a 42-char ETH address, a **useEffect** calls **`resolveMetaAddress(with0x)`** and stores the result in **resolvedMeta**. On Send, if the input was an ETH address, the effective meta-address used for **computeStealthAddressAndViewTag** is **resolvedMeta** (from the Registry). |
+### 4.1 Adding New ERC-20 Tokens
 
-**Summary:** The Registry is a single on-chain contract. **Reads** (resolve / is registered) happen in **registry.ts** and **SendView** via RPC. **Writes** (register) happen in **RegistrationView** via a signed transaction to the same contract.
+Edit **`frontend/src/lib/tokens.ts`**:
+
+- In **`TOKENS_BY_CHAIN`**, select the target `chainId` (e.g. `1` for mainnet).
+- Add a new entry to the `tokens` array with `symbol`, `name`, `decimals`, and `address` (contract address). Use `null` for the native asset.
+
+Example (snippet):
+
+```ts
+1: {
+  native: { symbol: "ETH", name: "Ether", decimals: 18, address: null },
+  tokens: [
+    { symbol: "USDC", name: "USD Coin", decimals: 6, address: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48" as Address },
+    { symbol: "USDT", name: "Tether USD", decimals: 6, address: "0xdAC17F958D2ee523a2206206994597C13D831ec7" as Address },
+    // Add more tokens here
+  ],
+},
+```
+
+`getTokensForChain(chainId)` and `getSelectableAssets(chainId)` will expose the new token for send and balance views.
+
+### 4.2 Mainnet Deployment
+
+1. **RPC:** Configure a mainnet RPC URL (e.g. Infura, Alchemy) and set it in your deploy environment or Hardhat network config.
+2. **Deploy contracts:** Run the same deploy script (or your mainnet Hardhat/Ignition flow) with the mainnet network and a funded deployer key. Ensure **`frontend/src/contracts/deployedAddresses.ts`** is updated for the target chainId and new contract addresses (or use a build step that injects them).
+3. **Gas:** On EIP-1559 chains, the deploy script uses the provider’s default fee behavior; adjust `maxFeePerGas` / `maxPriorityFeePerGas` in the script or wallet if needed. User txs (register, announce, sweep) are standard; gas estimation is handled by the frontend via viem.
+4. **Frontend:** Point the app’s default chain and RPC to mainnet so that `getAppChain()`, `deployedAddresses`, and token configs all refer to the same chainId.
 
 ---
 
-## 8. Contracts and deployment
+## 5. User Experience & Security
 
-- **StealthMetaAddressRegistry:** Maps `(registrant address, schemeId) → 66-byte stealth meta-address`. Exposes **`stealthMetaAddressOf(registrant, schemeId)`** and **`registerKeys(schemeId, stealthMetaAddress)`** (and possibly **register** with signature for gasless registration).
-- **StealthAddressAnnouncer (EIP-5564):** Emits **Announcement** events with schemeId, stealth address, caller, ephemeral pub key, metadata. Senders call **`announce(...)`** after sending ETH to the stealth address so recipients can scan and derive the one-time key.
+### 5.1 “Initialize Protocol” Onboarding Flow
 
-Deployment (e.g. Hardhat) writes **`frontend/src/contracts/deployedAddresses.ts`** and copies ABIs into **`frontend/src/contracts/abis/`**. The frontend uses these for Registry and Announcer addresses and for encoding calls (viem) and parsing logs.
+When the user is not yet initialized, the app shows an entry gate (e.g. “Enter the Vault” / “Initialize Protocol”):
+
+1. **Connect wallet** (if not already).
+2. **Sign a fixed message** (e.g. “Sign this message to derive your Opaque Cash stealth keys…”). The signature is **not** sent to any server; it is used only in the browser as entropy.
+3. **Key derivation:** The app uses HKDF (SHA-256, domain `"opaque-cash-v1"`) to expand the signature to 64 bytes, then splits into viewing and spending private keys. It computes the two compressed public keys and forms the 66-byte stealth meta-address.
+4. **Registry check:** The app checks whether the connected ETH address is already registered in **StealthMetaAddressRegistry**.
+5. **Optional registration:** If not registered, the user is prompted to send a transaction to **`registerKeys(schemeId, stealthMetaAddress)`**, linking their ETH address to their meta-address so others can send by ETH address.
+
+After this, keys live in memory only; refreshing the page loses them unless you add a persistence mechanism (not in the baseline).
+
+### 5.2 Privacy Trade-offs
+
+- **Protocol-linked addresses (Registry):** If the user registers their meta-address, anyone can resolve it from their ETH address. Sends to “ETH address” go through the Registry and produce standard EIP-5564 announcements. **Recoverable** from chain + Registry; scanning works from any device that can recompute keys (e.g. same wallet signature).
+- **Manual Ghost Addresses:** One-time addresses (and ephemeral keys) stored **only in local storage** on the device. No on-chain announcement; the app monitors those addresses for balance. **Device-specific and local**—clearing storage or losing the device means losing the ability to associate those addresses with the user unless the user has a separate backup. Intentionally not recoverable from the protocol alone.
+
+### 5.3 View Tags and Scanning Performance
+
+Announcements include a **view tag** (first byte of Keccak256(shared_secret)). The scanner:
+
+1. Fetches all `Announcement` logs from **StealthAddressAnnouncer** (optionally in chunks for large ranges).
+2. For each log, runs **view-tag check** first (WASM: `check_announcement_view_tag_wasm`). If the tag does not match the value derived from the user’s viewing key and the log’s ephemeral public key, the announcement is skipped (no EC point addition).
+3. Only for **possible matches**, it runs full derivation and compares the derived stealth address to the log. For owned announcements, it then reconstructs the one-time signing key for sweeping.
+
+This reduces CPU and battery use when many announcements exist on-chain.
 
 ---
 
-## Quick reference: user journey
+## 6. Contracts and Deployment Reference
 
-1. **Visit** → Connect wallet (optional for Setup, required for Register/Send).
-2. **Setup** → Sign message → derive view/spend keys and meta-address (in-memory).
-3. **Register** → If not already registered, send `registerKeys(schemeId, metaAddress)` to Registry (links wallet address ↔ meta-address).
-4. **Send** → Enter recipient (meta-address or ETH address); if ETH address, app resolves meta-address from Registry → derive one-time stealth address → send ETH + announce.
-5. **Private balance** → Scan Announcer logs → filter/reconstruct with view/spend keys → show balances and sweep option.
+| Contract | Role |
+|----------|------|
+| **StealthMetaAddressRegistry** | `stealthMetaAddressOf(registrant, schemeId)`; `registerKeys(schemeId, stealthMetaAddress)`; optional `registerKeysOnBehalf` with EIP-712. |
+| **StealthAddressAnnouncer** | `announce(schemeId, stealthAddress, ephemeralPubKey, metadata)`; emits `Announcement` for scanners. |
 
-This is the full step-by-step flow from first visit through sending and receiving with the Stealth Meta-Address Registry.
+Deployment (e.g. `infra/scripts/deploy.ts`) writes **`frontend/src/contracts/deployedAddresses.ts`** and copies ABIs to **`frontend/src/contracts/abis/`**. The frontend uses these for Registry and Announcer addresses, encoding calls (viem), and parsing logs.
+
+---
+
+## Quick Reference: User Journey
+
+1. **Visit** → Connect wallet (required for Initialize / Register / Send).
+2. **Initialize Protocol** → Sign message → derive view/spend keys and meta-address (in-memory).
+3. **Register** (optional) → If not already registered, send `registerKeys(schemeId, metaAddress)` to link wallet ↔ meta-address.
+4. **Send** → Enter recipient (meta-address or ETH address); if ETH address, app resolves meta-address from Registry → derive one-time stealth address → send asset + announce.
+5. **Receive** → Use “Payment link” (protocol announcement) or “Manual Ghost Address” (local-only).
+6. **Private balance** → Scan Announcer logs (with view-tag filter) + optional Manual Ghost list → reconstruct keys for owned addresses → show balances and sweep.
+
+For WASM build details and troubleshooting, see **`scanner/WASM_BUILD.md`**.

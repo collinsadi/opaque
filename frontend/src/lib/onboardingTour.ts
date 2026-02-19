@@ -50,6 +50,7 @@ export function runOnboardingTour(): void {
       if (typeof window !== "undefined") {
         localStorage.setItem(TOUR_STORAGE_KEY, "1");
       }
+      d.destroy();
     },
   });
 

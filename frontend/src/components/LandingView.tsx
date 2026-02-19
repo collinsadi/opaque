@@ -1,3 +1,8 @@
+/**
+ * Entry Gate — Bold minimalist initialization screen.
+ * Shown when user clicks "Enter the Vault" and is not yet initialized.
+ */
+
 import { useState } from "react";
 import { createWalletClient, custom, encodeFunctionData, type EIP1193Provider } from "viem";
 import { getAppChain } from "../lib/chain";
@@ -108,41 +113,47 @@ export function LandingView() {
   if (isSetup) return null;
 
   return (
-    <div className="min-h-[80vh] flex flex-col items-center justify-center px-4 py-12">
-      <div className="max-w-lg w-full text-center">
-        <h1 className="text-4xl md:text-5xl font-bold text-white tracking-tight mb-3">
+    <div className="min-h-screen flex flex-col items-center justify-center bg-black px-6 py-16">
+      <div className="w-full max-w-md mx-auto text-center">
+        {/* Large Opaque heading */}
+        <h1 className="text-5xl sm:text-6xl md:text-7xl font-bold tracking-tight text-white mb-12">
           Opaque
         </h1>
-        <p className="text-neutral-500 text-sm md:text-base mb-4">
-          Non-custodial stealth payment protocol.
-        </p>
-        <p className="text-neutral-600 text-xs md:text-sm mb-10 max-w-md mx-auto">
-          Your keys never leave your browser. Privacy is mathematically guaranteed.
-        </p>
 
+        {/* Security Assurance Box */}
+        <div className="mb-10 p-5 rounded-xl border border-white/10 bg-white/2 text-left">
+          <p className="text-sm text-neutral-400 leading-relaxed">
+            By initializing, you generate your stealth keys locally. These keys never touch our
+            servers.
+          </p>
+        </div>
+
+        {/* Primary CTA */}
         {phase === "idle" && (
           <button
             type="button"
             onClick={handleEnterVault}
             disabled={isConnecting}
-            className="w-full max-w-sm mx-auto py-3.5 px-6 rounded-lg text-sm font-medium bg-white text-black hover:opacity-90 transition-opacity"
+            className="w-full py-4 px-6 rounded-xl text-sm font-medium bg-white text-black hover:opacity-90 disabled:opacity-50 transition-opacity border-0"
           >
-            {!isConnected ? "Connect wallet & enter" : "Initialize Protocol"}
+            {!isConnected ? "Connect wallet & Initialize Protocol" : "Initialize Protocol"}
           </button>
         )}
 
         {(phase === "connecting" || phase === "signing") && (
-          <p className="text-neutral-400 text-sm">
-            {phase === "connecting" ? "Check your wallet to connect…" : "Sign the message in your wallet to derive keys…"}
+          <p className="text-neutral-500 text-sm">
+            {phase === "connecting"
+              ? "Check your wallet to connect…"
+              : "Sign the message in your wallet to derive keys…"}
           </p>
         )}
 
         {phase === "checking" && (
-          <p className="text-neutral-400 text-sm">Checking registry…</p>
+          <p className="text-neutral-500 text-sm">Checking registry…</p>
         )}
 
         {phase === "register" && (
-          <div className="card text-left max-w-md mx-auto">
+          <div className="text-left rounded-xl border border-white/10 bg-white/2 p-6">
             <h2 className="text-lg font-semibold text-white mb-2">Register Privacy Keys</h2>
             <p className="text-sm text-neutral-500 mb-4">
               One-time on-chain registration so others can send to you by your ETH address.
@@ -151,7 +162,7 @@ export function LandingView() {
             <button
               type="button"
               onClick={handleRegister}
-              className="w-full py-2.5 px-4 rounded-lg text-sm font-medium btn-primary"
+              className="w-full py-3.5 px-6 rounded-xl text-sm font-medium bg-white text-black hover:opacity-90 transition-opacity"
             >
               Register
             </button>
@@ -159,23 +170,21 @@ export function LandingView() {
         )}
 
         {phase === "registering" && (
-          <p className="text-neutral-400 text-sm">Confirm the transaction in your wallet…</p>
+          <p className="text-neutral-500 text-sm">Confirm the transaction in your wallet…</p>
         )}
 
         {phase === "done" && (
-          <p className="text-success text-sm">Setup complete. Entering dashboard…</p>
+          <p className="text-neutral-400 text-sm">Setup complete. Entering dashboard…</p>
         )}
 
         {phase === "error" && error && (
-          <div className="mt-4 p-3 rounded-lg bg-neutral-900 border border-error/30 text-error text-sm">
+          <div className="mt-4 p-4 rounded-xl border border-red-500/30 bg-red-500/5 text-red-400 text-sm text-left">
             {error}
           </div>
         )}
 
         {txHash && (
-          <p className="mt-3 text-neutral-500 text-xs font-mono break-all">
-            Tx: {txHash}
-          </p>
+          <p className="mt-4 text-neutral-600 text-xs font-mono break-all">{txHash}</p>
         )}
       </div>
     </div>
