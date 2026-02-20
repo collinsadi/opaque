@@ -574,9 +574,9 @@ export function PrivateBalanceView() {
               {syncingPaused
                 ? "Syncing Paused"
                 : scanner.progress.phase === "indexer-fetch"
-                  ? "Fetching from indexer…"
+                  ? "Syncing with Indexer…"
                   : scanner.progress.phase === "indexer-fetched"
-                    ? "Data Fetched from Indexer"
+                    ? "Scanning Vault…"
                     : scanner.progress.phase === "backfilling"
                       ? "Optimizing Vault…"
                       : scanner.progress.phase === "syncing" || scanner.progress.phase === "loading-cache"
@@ -604,7 +604,7 @@ export function PrivateBalanceView() {
           {(scanner.progress.message || scanner.isBackfilling) && !syncingPaused && (
             <p className="text-neutral-600 text-xs mt-2 font-mono">
               {scanner.progress.phase === "indexer-fetched"
-                ? "Data Fetched from Indexer"
+                ? "Scanning Vault…"
                 : scanner.isBackfilling
                   ? `Optimizing Vault… [${scanner.progress.percent}%]`
                   : scanner.progress.message}

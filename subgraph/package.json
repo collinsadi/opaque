@@ -2,9 +2,10 @@
   "name": "subgraph",
   "license": "UNLICENSED",
   "scripts": {
+    "auth": "graph auth",
     "codegen": "graph codegen",
     "build": "graph build",
-    "deploy": "graph deploy --node https://api.studio.thegraph.com/deploy/ subgraph",
+    "deploy": "graph deploy --node https://api.studio.thegraph.com/deploy/ opaque",
     "create-local": "graph create --node http://localhost:8020/ subgraph",
     "remove-local": "graph remove --node http://localhost:8020/ subgraph",
     "deploy-local": "graph deploy --node http://localhost:8020/ --ipfs http://localhost:5001 subgraph",

@@ -8,6 +8,7 @@
  */
 
 import { useState, useEffect, useCallback, useRef } from "react";
+import { gql, ApolloClient, InMemoryCache, HttpLink } from "@apollo/client";
 import type { PublicClient } from "viem";
 import { getConfigForChain, getSubgraphUrl } from "../contracts/contract-config";
 import {
@@ -23,19 +24,21 @@ import { STEALTH_ANNOUNCER_ABI } from "../lib/contracts";
 
 const SUBGRAPH_ANNOUNCEMENTS_LIMIT = 1000;
 
-const ANNOUNCEMENTS_QUERY = `query GetAnnouncements($first: Int!, $orderBy: String!, $orderDirection: String!) {
-  announcements(first: $first, orderBy: $orderBy, orderDirection: $orderDirection) {
-    id
-    blockNumber
-    timestamp
-    etherealPublicKey
-    viewTag
-    metadata
-    stealthAddress
-    logIndex
-    transactionHash
+/** Fetch last 1000 announcements; fields required for WASM scan + cache id. */
+const ANNOUNCEMENTS_QUERY = gql`
+  query GetAnnouncements($first: Int!, $orderBy: String!, $orderDirection: String!) {
+    announcements(first: $first, orderBy: $orderBy, orderDirection: $orderDirection) {
+      id
+      etherealPublicKey
+      viewTag
+      metadata
+      blockNumber
+      transactionHash
+      logIndex
+      stealthAddress
+    }
   }
-}`;
+`;
 
 const INITIAL_CHUNK_SIZE = 50_000;
 const MIN_CHUNK_SIZE = 500;
@@ -97,61 +100,56 @@ function getStartBlock(chainId: number): bigint {
 
 type SubgraphAnnouncement = {
   id: string;
-  blockNumber: number;
-  timestamp: string;
   etherealPublicKey: string;
   viewTag: number;
   metadata: string;
-  stealthAddress: string;
-  logIndex: number;
+  blockNumber: number | string;
   transactionHash: string;
-};
-
-type SubgraphResponse = {
-  data?: { announcements: SubgraphAnnouncement[] };
-  errors?: Array<{ message: string }>;
+  logIndex: number;
+  stealthAddress: string;
 };
 
 /**
- * Fetch latest announcements from the Subgraph (GraphQL). Returns null on failure.
+ * Fetch latest announcements from the Subgraph via Apollo Client. Returns null on failure (safe fallback to RPC).
  */
 async function fetchFromSubgraph(
   subgraphUrl: string,
   chainId: number
 ): Promise<CachedAnnouncement[] | null> {
-  const res = await fetch(subgraphUrl, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
+  const apolloClient = new ApolloClient({
+    link: new HttpLink({ uri: subgraphUrl }),
+    cache: new InMemoryCache(),
+  });
+  try {
+    const result = await apolloClient.query<{ announcements: SubgraphAnnouncement[] }>({
       query: ANNOUNCEMENTS_QUERY,
       variables: {
         first: SUBGRAPH_ANNOUNCEMENTS_LIMIT,
         orderBy: "blockNumber",
         orderDirection: "desc",
       },
-    }),
-  });
-  if (!res.ok) return null;
-  const json = (await res.json()) as SubgraphResponse;
-  if (json.errors?.length) return null;
-  const list = json.data?.announcements;
-  if (!Array.isArray(list)) return null;
-  return list.map((a) => {
-    const blockNumber = typeof a.blockNumber === "number" ? a.blockNumber : parseInt(String(a.blockNumber), 10);
-    const logIndex = typeof a.logIndex === "number" ? a.logIndex : parseInt(String(a.logIndex), 10);
-    return {
-      id: announcementId(chainId, a.transactionHash, a.logIndex),
-      chainId,
-      blockNumber: Number.isFinite(blockNumber) ? blockNumber : 0,
-      transactionHash: a.transactionHash ?? "",
-      logIndex: Number.isFinite(logIndex) ? logIndex : 0,
-      args: {
-        stealthAddress: a.stealthAddress ?? "",
-        ephemeralPubKey: a.etherealPublicKey ?? "",
-        metadata: a.metadata ?? "",
-      },
-    };
-  });
+    });
+    const list = result.data?.announcements;
+    if (!Array.isArray(list)) return null;
+    return list.map((a) => {
+      const blockNumber = typeof a.blockNumber === "number" ? a.blockNumber : parseInt(String(a.blockNumber), 10);
+      const logIndex = typeof a.logIndex === "number" ? a.logIndex : parseInt(String(a.logIndex), 10);
+      return {
+        id: announcementId(chainId, a.transactionHash, a.logIndex),
+        chainId,
+        blockNumber: Number.isFinite(blockNumber) ? blockNumber : 0,
+        transactionHash: a.transactionHash ?? "",
+        logIndex: Number.isFinite(logIndex) ? logIndex : 0,
+        args: {
+          stealthAddress: a.stealthAddress ?? "",
+          ephemeralPubKey: a.etherealPublicKey ?? "",
+          metadata: a.metadata ?? "",
+        },
+      };
+    });
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -310,7 +308,7 @@ export function useScanner(opts: UseScannerOptions): UseScannerResult {
         setProgress((p) => ({
           ...p,
           phase: "indexer-fetch",
-          message: "Fetching from indexer…",
+          message: "Syncing with Indexer…",
           error: null,
         }));
         try {
@@ -325,12 +323,12 @@ export function useScanner(opts: UseScannerOptions): UseScannerResult {
             })));
             const maxBlock = list.length > 0 ? Math.max(...list.map((a) => a.blockNumber)) : 0;
             await setSyncState(chainId, maxBlock);
-            const updated = await getAnnouncementsForChain(chainId);
-            setAnnouncements(updated);
+            // Pass announcements directly so WASM scanning loop runs immediately (no cache read).
+            setAnnouncements(list);
             setProgress({
               phase: "indexer-fetched",
               percent: 100,
-              message: "Data Fetched from Indexer",
+              message: "Scanning Vault…",
               fromBlock: startBlock,
               toBlock,
               currentBlock: toBlock,
@@ -340,7 +338,7 @@ export function useScanner(opts: UseScannerOptions): UseScannerResult {
             return;
           }
         } catch {
-          // Fall through to chunked RPC fallback
+          // Fall through to chunked RPC fallback (safe mode)
         }
       }
 

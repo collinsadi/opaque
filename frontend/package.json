@@ -10,6 +10,8 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@apollo/client": "^3.11.0",
+    "graphql": "^16.9.0",
     "@noble/curves": "^1.9.7",
     "@noble/hashes": "^1.8.0",
     "driver.js": "^1.4.0",
