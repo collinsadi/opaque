@@ -1,9 +1,12 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import {
   createWalletClient,
+  createPublicClient,
   custom,
+  http,
   parseEther,
   parseUnits,
+  formatUnits,
   encodeFunctionData,
   type Address,
   type Hex,
@@ -15,7 +18,7 @@ import { useWallet } from "../hooks/useWallet";
 import { computeStealthAddressAndViewTag } from "../lib/stealth";
 import { resolveMetaAddress } from "../lib/registry";
 import { STEALTH_ANNOUNCER_ABI, SCHEME_ID_SECP256K1 } from "../lib/contracts";
-import { getSelectableAssets } from "../lib/tokens";
+import { getSelectableAssets, ERC20_BALANCE_ABI } from "../lib/tokens";
 import { getConfigForChain } from "../contracts/contract-config";
 import type { TokenInfo } from "../lib/tokens";
 import { ProtocolStepper } from "./ProtocolStepper";
@@ -50,9 +53,12 @@ function isDirectMetaAddress(s: string): boolean {
   return (t.length === 2 + 66 * 2) && (t.startsWith("0x02") || t.startsWith("0x03"));
 }
 
+/** Conservative gas limit for a simple ETH transfer (21k). */
+const SIMPLE_TRANSFER_GAS = 21000n;
+
 export function SendView() {
   const { isSetup } = useKeys();
-  const { chainId } = useWallet();
+  const { chainId, address } = useWallet();
   const { push: logPush } = useProtocolLog();
   const pushTx = useTxHistoryStore((s) => s.push);
   const currentConfig = getConfigForChain(chainId);
@@ -67,6 +73,8 @@ export function SendView() {
   const [error, setError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [steps, setSteps] = useState<ProtocolStep[]>([]);
+  const [activeBalance, setActiveBalance] = useState<bigint | null>(null);
+  const [balanceLoading, setBalanceLoading] = useState(false);
 
   useEffect(() => {
     const raw = recipientMeta.trim();
@@ -92,6 +100,115 @@ export function SendView() {
       cancelled = true;
     };
   }, [recipientMeta, chainId]);
+
+  // Dynamic balance fetching when asset or wallet changes
+  useEffect(() => {
+    if (chainId == null || !chain || !address) {
+      setActiveBalance(null);
+      return;
+    }
+    const rpcUrl = chain.rpcUrls?.default?.http?.[0];
+    if (!rpcUrl) {
+      setActiveBalance(null);
+      return;
+    }
+    let cancelled = false;
+    setBalanceLoading(true);
+    const publicClient = createPublicClient({
+      chain,
+      transport: http(rpcUrl),
+    });
+    const isNative = selectedAsset.address === null;
+    (async () => {
+      try {
+        if (isNative) {
+          const bal = await publicClient.getBalance({ address });
+          if (!cancelled) setActiveBalance(bal);
+        } else if (selectedAsset.address) {
+          const bal = await publicClient.readContract({
+            address: selectedAsset.address,
+            abi: ERC20_BALANCE_ABI,
+            functionName: "balanceOf",
+            args: [address],
+          });
+          if (!cancelled) setActiveBalance(bal);
+        } else {
+          if (!cancelled) setActiveBalance(null);
+        }
+      } catch {
+        if (!cancelled) setActiveBalance(null);
+      } finally {
+        if (!cancelled) setBalanceLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [chainId, chain, address, selectedAsset.symbol, selectedAsset.address]);
+
+  // Gas reserve for ETH: max sendable = balance - estimated gas (conservative 21k * gasPrice)
+  const [ethGasReserve, setEthGasReserve] = useState<bigint | null>(null);
+  useEffect(() => {
+    if (chainId == null || !chain || selectedAsset.address !== null || !address) {
+      setEthGasReserve(null);
+      return;
+    }
+    const rpcUrl = chain.rpcUrls?.default?.http?.[0];
+    if (!rpcUrl) {
+      setEthGasReserve(null);
+      return;
+    }
+    let cancelled = false;
+    const publicClient = createPublicClient({
+      chain,
+      transport: http(rpcUrl),
+    });
+    publicClient.getGasPrice()
+      .then((gasPrice) => {
+        if (!cancelled) setEthGasReserve(SIMPLE_TRANSFER_GAS * gasPrice);
+      })
+      .catch(() => {
+        if (!cancelled) setEthGasReserve(null);
+      });
+    return () => { cancelled = true; };
+  }, [chainId, chain, address, selectedAsset.address]);
+
+  const maxSendableBalance = useMemo(() => {
+    if (activeBalance == null) return null;
+    const isNative = selectedAsset.address === null;
+    if (isNative && ethGasReserve != null) {
+      return activeBalance > ethGasReserve ? activeBalance - ethGasReserve : 0n;
+    }
+    return activeBalance;
+  }, [activeBalance, selectedAsset.address, ethGasReserve]);
+
+  const inputAmountWei = useMemo(() => {
+    const raw = amount.trim();
+    if (!raw) return null;
+    try {
+      return selectedAsset.address === null
+        ? parseEther(raw)
+        : parseUnits(raw, selectedAsset.decimals);
+    } catch {
+      return null;
+    }
+  }, [amount, selectedAsset.address, selectedAsset.decimals]);
+
+  const isInsufficientBalance = Boolean(
+    maxSendableBalance != null &&
+    inputAmountWei != null &&
+    inputAmountWei > 0n &&
+    inputAmountWei > maxSendableBalance
+  );
+
+  const formattedMaxBalance = maxSendableBalance != null
+    ? formatUnits(maxSendableBalance, selectedAsset.decimals)
+    : null;
+
+  const handleMaxAmount = () => {
+    if (maxSendableBalance == null || maxSendableBalance === 0n) return;
+    setAmount(formattedMaxBalance ?? "0");
+  };
 
   const handleSend = async () => {
     setError(null);
@@ -430,13 +547,31 @@ export function SendView() {
           <label className="block text-sm text-neutral-500 mb-1.5">
             Amount ({selectedAsset.symbol})
           </label>
-          <input
-            type="text"
-            value={amount}
-            onChange={(e) => setAmount(e.target.value)}
-            placeholder={selectedAsset.address === null ? "0.01" : "100"}
-            className="input-field"
-          />
+          <div className="relative flex rounded-lg shadow-sm">
+            <input
+              type="text"
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              placeholder={selectedAsset.address === null ? "0.01" : "100"}
+              className={`input-field flex-1 pr-14 ${isInsufficientBalance ? "border-red-500/50 focus:border-red-500/70 focus:ring-red-500/20" : ""}`}
+            />
+            <button
+              type="button"
+              onClick={handleMaxAmount}
+              disabled={maxSendableBalance == null || maxSendableBalance === 0n || balanceLoading}
+              className="absolute right-2 top-1/2 -translate-y-1/2 py-1 px-2 text-xs font-medium text-neutral-400 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              MAX
+            </button>
+          </div>
+          {balanceLoading && (
+            <p className="mt-1.5 text-neutral-600 text-xs">Loading balance…</p>
+          )}
+          {isInsufficientBalance && formattedMaxBalance != null && (
+            <p className="mt-1.5 text-red-400 text-xs">
+              Exceeds available balance ({formattedMaxBalance} {selectedAsset.symbol})
+            </p>
+          )}
         </div>
         {error && <p className="text-error text-sm">{error}</p>}
         {txHash && (
@@ -451,7 +586,7 @@ export function SendView() {
         <button
           type="button"
           onClick={handleSend}
-          disabled={sending || !currentConfig}
+          disabled={sending || !currentConfig || isInsufficientBalance || !recipientMeta.trim() || !amount.trim()}
           className={`w-full py-2.5 px-4 rounded-lg text-sm font-medium btn-primary ${sending ? "loading" : ""}`}
         >
           {sending ? "Sending…" : "Send"}
