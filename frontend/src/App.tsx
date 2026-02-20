@@ -70,7 +70,7 @@ function AppContent() {
   };
 
   const renderView = () => {
-    if (tab === "dashboard") return <DashboardView onNavigate={setTab} />;
+    if (tab === "dashboard") return <DashboardView onNavigate={setTab} address={address ?? undefined} />;
     if (tab === "send") return <SendView />;
     if (tab === "receive") return <ReceiveView onBack={() => setTab("dashboard")} />;
     if (tab === "balance") return <PrivateBalanceView />;

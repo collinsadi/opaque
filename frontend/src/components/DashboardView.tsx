@@ -1,13 +1,20 @@
 import type { Tab } from "./Layout";
+import { AddressDisplay } from "./AddressDisplay";
 
 type DashboardViewProps = {
   onNavigate: (t: Tab) => void;
+  address?: string;
 };
 
-export function DashboardView({ onNavigate }: DashboardViewProps) {
+export function DashboardView({ onNavigate, address }: DashboardViewProps) {
   return (
     <div className="w-full max-w-2xl mx-auto">
-      <h2 className="text-lg font-semibold text-white mb-1">Dashboard</h2>
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-1">
+        <h2 className="text-lg font-semibold text-white">Dashboard</h2>
+        {address && (
+          <AddressDisplay address={address} className="shrink-0" />
+        )}
+      </div>
       <p className="text-sm text-neutral-500 mb-8">
         Send or receive with privacy.
       </p>

@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { Footer } from "./Footer";
+import { AddressDisplay } from "./AddressDisplay";
 
 export type Tab = "dashboard" | "send" | "receive" | "balance" | "history" | "subens" | "profile";
 
@@ -18,11 +19,6 @@ type LayoutProps = {
 };
 
 const navItems: { id: Tab; label: string }[] = [];
-
-function truncateAddress(addr: string) {
-  if (addr.length < 12) return addr;
-  return `${addr.slice(0, 6)}…${addr.slice(-4)}`;
-}
 
 function DesktopNav({
   tab,
@@ -109,8 +105,12 @@ function DesktopNav({
                   alt=""
                   className="w-8 h-8 rounded-full bg-neutral-800"
                 />
-                <span className="text-sm font-mono text-neutral-400 hidden sm:inline">
-                  {truncateAddress(address)}
+                <span
+                  className="hidden sm:inline"
+                  onClick={(e) => e.stopPropagation()}
+                  role="presentation"
+                >
+                  <AddressDisplay address={address} />
                 </span>
               </button>
               {dropdownOpen && (
