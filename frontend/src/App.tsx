@@ -19,6 +19,7 @@ import { NetworkGuard } from "./components/NetworkGuard";
 import { useWallet } from "./hooks/useWallet";
 import { useRegistrationStatus } from "./hooks/useRegistrationStatus";
 import { useVaultStore } from "./store/vaultStore";
+import { useGhostAddressStore, useGhostAddressPersistence } from "./store/ghostAddressStore";
 import { getExplorerTxUrl } from "./lib/explorer";
 
 function AppContent() {
@@ -30,6 +31,12 @@ function AppContent() {
   const { isSetup, clearKeys } = useKeys();
   const { isRegistered, isLoading: isRegistrationCheckLoading } = useRegistrationStatus(address, chainId);
   const clearVault = useVaultStore((s) => s.clear);
+
+  useGhostAddressPersistence();
+
+  useEffect(() => {
+    useGhostAddressStore.getState().sanitizeGhostAddresses();
+  }, []);
 
   useEffect(() => {
     setRegistrationJustCompleted(false);

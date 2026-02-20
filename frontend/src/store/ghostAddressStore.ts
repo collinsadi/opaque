@@ -4,8 +4,8 @@
  * Persisted (localStorage) so the app can monitor and claim incoming funds.
  */
 
+import { useEffect, useRef } from "react";
 import { create } from "zustand";
-import { persist } from "zustand/middleware";
 import type { Address } from "viem";
 
 export type GhostEntry = {
@@ -18,47 +18,116 @@ export type GhostEntry = {
 
 const STORAGE_KEY = "opaque-ghost-addresses";
 
+/** Normalize entry so all fields are JSON-safe (explicit strings where needed). */
+function normalizeEntry(entry: Omit<GhostEntry, "createdAt">): GhostEntry {
+  return {
+    chainId: Number(entry.chainId),
+    stealthAddress: String(entry.stealthAddress) as Address,
+    ephemeralPrivKeyHex: entry.ephemeralPrivKeyHex != null && entry.ephemeralPrivKeyHex !== ""
+      ? String(entry.ephemeralPrivKeyHex)
+      : undefined,
+    createdAt: Number(Date.now()),
+  };
+}
+
+/** Parse stored payload: supports raw array or legacy persist shape. */
+function parseStored(raw: string | null): GhostEntry[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (Array.isArray(parsed)) return parsed;
+    if (parsed && typeof parsed === "object" && Array.isArray((parsed as { state?: { entries?: unknown } }).state?.entries)) {
+      return (parsed as { state: { entries: GhostEntry[] } }).state.entries;
+    }
+    return [];
+  } catch {
+    return [];
+  }
+}
+
 type GhostState = {
   entries: GhostEntry[];
   add: (entry: Omit<GhostEntry, "createdAt">) => void;
   remove: (stealthAddress: string, chainId: number) => void;
+  /** Replace entries (used when rehydrating from localStorage). */
+  setEntries: (entries: GhostEntry[]) => void;
+  /** Remove entries missing ephemeralPrivKeyHex (zombies). Call on app mount. */
+  sanitizeGhostAddresses: () => void;
   /** Find a single entry by stealthAddress and chainId (for withdrawal matching). */
   getEntry: (stealthAddress: string, chainId: number) => GhostEntry | undefined;
   getForChain: (chainId: number) => GhostEntry[];
 };
 
-export const useGhostAddressStore = create<GhostState>()(
-  persist(
-    (set, get) => ({
-      entries: [],
+export const useGhostAddressStore = create<GhostState>()((set, get) => ({
+  entries: [],
 
-      add: (entry) =>
-        set((state) => ({
-          entries: [
-            ...state.entries,
-            { ...entry, createdAt: Date.now() },
-          ],
-        })),
+  add: (entry) => {
+    if (entry.ephemeralPrivKeyHex == null || entry.ephemeralPrivKeyHex === "") {
+      return;
+    }
+    const newEntry = normalizeEntry(entry);
+    set((state) => ({
+      entries: [...state.entries, newEntry],
+    }));
+  },
 
-      remove: (stealthAddress, chainId) =>
-        set((state) => ({
-          entries: state.entries.filter(
-            (e) =>
-              e.chainId !== chainId ||
-              e.stealthAddress.toLowerCase() !== stealthAddress.toLowerCase()
-          ),
-        })),
+  remove: (stealthAddress, chainId) =>
+    set((state) => ({
+      entries: state.entries.filter(
+        (e) =>
+          e.chainId !== chainId ||
+          String(e.stealthAddress).toLowerCase() !== stealthAddress.toLowerCase()
+      ),
+    })),
 
-      getEntry: (stealthAddress, chainId) =>
-        get().entries.find(
-          (e) =>
-            e.chainId === chainId &&
-            e.stealthAddress.toLowerCase() === stealthAddress.toLowerCase()
-        ),
-
-      getForChain: (chainId) =>
-        get().entries.filter((e) => e.chainId === chainId),
+  setEntries: (entries) =>
+    set({
+      entries: entries.map((e) => ({
+        chainId: Number(e.chainId),
+        stealthAddress: String(e.stealthAddress) as Address,
+        ephemeralPrivKeyHex: e.ephemeralPrivKeyHex != null ? String(e.ephemeralPrivKeyHex) : undefined,
+        createdAt: Number(e.createdAt),
+      })),
     }),
-    { name: STORAGE_KEY }
-  )
-);
+
+  sanitizeGhostAddresses: () =>
+    set((state) => ({
+      entries: state.entries.filter((e) => !!e.ephemeralPrivKeyHex),
+    })),
+
+  getEntry: (stealthAddress, chainId) =>
+    get().entries.find(
+      (e) =>
+        e.chainId === chainId &&
+        String(e.stealthAddress).toLowerCase() === stealthAddress.toLowerCase()
+    ),
+
+  getForChain: (chainId) =>
+    get().entries.filter((e) => e.chainId === chainId),
+}));
+
+/**
+ * Loads ghost entries from localStorage on mount and persists whenever entries change.
+ * Skips writing an empty array until the first load has completed to avoid overwriting storage on initial load.
+ */
+export function useGhostAddressPersistence(): void {
+  const entries = useGhostAddressStore((s) => s.entries);
+  const setEntries = useGhostAddressStore((s) => s.setEntries);
+  const hasLoadedFromStorage = useRef(false);
+
+  // Rehydrate from localStorage once on mount
+  useEffect(() => {
+    if (typeof localStorage === "undefined") return;
+    const raw = localStorage.getItem(STORAGE_KEY);
+    const stored = parseStored(raw);
+    setEntries(stored);
+  }, [setEntries]);
+
+  // Persist whenever entries change; do not overwrite with [] before we've ever written (avoids race on first load)
+  useEffect(() => {
+    if (typeof localStorage === "undefined") return;
+    if (entries.length === 0 && !hasLoadedFromStorage.current) return;
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(entries));
+    hasLoadedFromStorage.current = true;
+  }, [entries]);
+}

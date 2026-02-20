@@ -126,11 +126,19 @@ export function ReceiveView({ onBack }: { onBack: () => void }) {
   if (mode === "manual_ghost") {
     if (!ghostResult) {
       const generate = () => {
-        const { stealthAddress, ephemeralPriv } = computeStealthAddressAndViewTag(stealthMetaAddressHex);
-        const ephemeralPrivKeyHex = bytesToHex(ephemeralPriv);
-        addGhost({ chainId, stealthAddress, ephemeralPrivKeyHex });
-        watchlistAdd(chainId, stealthAddress as `0x${string}`);
-        setGhostResult({ stealthAddress, ephemeralPrivKeyHex });
+        try {
+          const { stealthAddress, ephemeralPriv } = computeStealthAddressAndViewTag(stealthMetaAddressHex);
+          const ephemeralPrivKeyHex = bytesToHex(ephemeralPriv);
+          if (ephemeralPrivKeyHex == null || ephemeralPrivKeyHex === "") {
+            console.error("[Opaque] Ghost address key generation produced no ephemeral key.");
+            return;
+          }
+          addGhost({ chainId, stealthAddress, ephemeralPrivKeyHex });
+          watchlistAdd(chainId, stealthAddress as `0x${string}`);
+          setGhostResult({ stealthAddress, ephemeralPrivKeyHex });
+        } catch (err) {
+          console.error("[Opaque] Ghost address key generation failed:", err);
+        }
       };
       return (
         <div className="w-full max-w-lg mx-auto">

@@ -241,10 +241,12 @@ export function PrivateBalanceView() {
   const chain = chainId != null ? getChain(chainId) : null;
   const ghostStoreEntries = useGhostAddressStore((s) => s.entries);
   const ghostEntries = useMemo(
-    () => ghostStoreEntries.filter((e) => e.chainId === (chainId ?? 0)),
+    () =>
+      ghostStoreEntries.filter(
+        (e) => e.chainId === (chainId ?? 0) && !!e.ephemeralPrivKeyHex
+      ),
     [ghostStoreEntries, chainId]
   );
-  const addGhost = useGhostAddressStore((s) => s.add);
   const watchlistAdd = useWatchlistStore((s) => s.add);
   const watchlistArchive = useWatchlistStore((s) => s.archive);
   const { showToast } = useToast();
@@ -757,6 +759,42 @@ export function PrivateBalanceView() {
                   selectedAsset.address === null
                     ? formatEther(balanceRaw)
                     : (Number(balanceRaw) / 10 ** selectedAsset.decimals).toFixed(selectedAsset.decimals);
+                const isGhostWithoutKey = tx.source === "manual" && !tx.privateKey;
+                if (isGhostWithoutKey) {
+                  return (
+                    <div
+                      key={tx.id}
+                      className="card flex flex-wrap items-center justify-between gap-3 border-amber-500/40"
+                    >
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                          <span className="text-xs px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 border border-amber-500/40">
+                            Manual/Ghost Funds
+                          </span>
+                          <ExplorerLink chainId={chainId} value={tx.address} type="address" className="text-neutral-400 text-xs" />
+                        </div>
+                        <p className="text-success font-semibold mt-0.5">
+                          {amountStr} {selectedAsset.symbol}
+                        </p>
+                        <p className="text-amber-500/90 text-xs mt-1">
+                          This address was generated incorrectly and cannot be spent.
+                        </p>
+                      </div>
+                      {chainId != null && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            watchlistArchive(chainId, tx.address);
+                            showToast("Address archived. It will no longer be polled for balances.");
+                          }}
+                          className="px-2 py-1 text-xs rounded-md border border-neutral-600 text-neutral-400 hover:bg-neutral-800 hover:text-neutral-300"
+                        >
+                          Archive
+                        </button>
+                      )}
+                    </div>
+                  );
+                }
                 return (
                   <div
                     key={tx.id}
@@ -862,6 +900,14 @@ export function PrivateBalanceView() {
 
 
       {claimModalTx && claimAsset && (
+        (claimModalTx.source === "manual" && !claimModalTx.privateKey) ? (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60" onClick={() => { setClaimModalTx(null); setClaimAsset(null); setClaimError(null); }}>
+            <div className="card max-w-md w-full p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
+              <p className="text-amber-500/90 text-sm">This address was generated incorrectly and cannot be spent.</p>
+              <button type="button" onClick={() => { setClaimModalTx(null); setClaimAsset(null); setClaimError(null); }} className="mt-4 px-3 py-1.5 rounded-lg text-sm btn-secondary">Close</button>
+            </div>
+          </div>
+        ) : (
         <ClaimModal
           tx={claimModalTx}
           asset={claimAsset}
@@ -882,6 +928,7 @@ export function PrivateBalanceView() {
           }}
           withdrawalSteps={withdrawalSteps}
         />
+        )
       )}
 
       {gasRequiredStealthAddress && (
@@ -940,14 +987,16 @@ export function PrivateBalanceView() {
                     return;
                   }
                   const addr = getAddress(trimmed);
-                  const exists = ghostEntries.some(
+                  const existsInGhost = ghostEntries.some(
                     (e) => e.stealthAddress.toLowerCase() === addr.toLowerCase()
                   );
-                  if (exists) {
+                  const existsInWatchlist = watchlistAddresses.some(
+                    (a) => a.toLowerCase() === addr.toLowerCase()
+                  );
+                  if (existsInGhost || existsInWatchlist) {
                     setManualImportError("Address is already in the tracking list.");
                     return;
                   }
-                  addGhost({ chainId, stealthAddress: addr });
                   watchlistAdd(chainId, addr);
                   setManualImportOpen(false);
                   showToast("Ghost address added. Checking for funds…");
