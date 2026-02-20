@@ -12,8 +12,8 @@ export function hasCompletedOnboardingTour(): boolean {
   return typeof window !== "undefined" && !!localStorage.getItem(TOUR_STORAGE_KEY);
 }
 
-export function runOnboardingTour(): void {
-  if (hasCompletedOnboardingTour()) return;
+export function runOnboardingTour(force?: boolean): void {
+  if (!force && hasCompletedOnboardingTour()) return;
 
   const d = driver({
     showProgress: true,

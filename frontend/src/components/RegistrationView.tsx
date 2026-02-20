@@ -5,19 +5,21 @@ import {
   encodeFunctionData,
   type EIP1193Provider,
 } from "viem";
-import { getAppChain } from "../lib/chain";
+import { getChain } from "../lib/chain";
 import { useKeys } from "../context/KeysContext";
 import { useWallet } from "../hooks/useWallet";
 import {
   isRegistered,
-  REGISTRY_ADDRESS,
+  getRegistryAddress,
   STEALTH_REGISTRY_ABI,
 } from "../lib/registry";
 import { SCHEME_ID_SECP256K1 } from "../lib/contracts";
+import { getConfigForChain } from "../contracts/contract-config";
 
 export function RegistrationView() {
   const { isSetup, stealthMetaAddressHex } = useKeys();
-  const { isConnected, address } = useWallet();
+  const { isConnected, address, chainId } = useWallet();
+  const currentConfig = getConfigForChain(chainId);
   const [registered, setRegistered] = useState<boolean | null>(null);
   const [checking, setChecking] = useState(true);
   const [registering, setRegistering] = useState(false);
@@ -25,20 +27,22 @@ export function RegistrationView() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!address) {
+    if (!address || chainId == null) {
       setRegistered(null);
       setChecking(false);
       return;
     }
     setChecking(true);
-    isRegistered(address)
+    isRegistered(address, chainId)
       .then(setRegistered)
       .catch(() => setRegistered(null))
       .finally(() => setChecking(false));
-  }, [address]);
+  }, [address, chainId]);
 
   const handleRegister = async () => {
-    if (!stealthMetaAddressHex || !address) return;
+    if (!stealthMetaAddressHex || !address || chainId == null || !currentConfig) return;
+    const registryAddress = getRegistryAddress(chainId);
+    if (!registryAddress) return;
     setError(null);
     setTxHash(null);
     setRegistering(true);
@@ -46,7 +50,7 @@ export function RegistrationView() {
       const ethereum = (window as unknown as { ethereum?: EIP1193Provider }).ethereum;
       if (!ethereum?.request) throw new Error("No wallet found.");
       const client = createWalletClient({
-        chain: getAppChain(),
+        chain: getChain(chainId),
         transport: custom(ethereum),
       });
       const calldata = encodeFunctionData({
@@ -56,7 +60,7 @@ export function RegistrationView() {
       });
       const hash = await client.sendTransaction({
         account: address,
-        to: REGISTRY_ADDRESS,
+        to: registryAddress,
         data: calldata,
         value: 0n,
       });
@@ -116,7 +120,7 @@ export function RegistrationView() {
             <button
               type="button"
               onClick={handleRegister}
-              disabled={registering}
+              disabled={registering || !currentConfig}
               className="w-full py-2.5 px-4 rounded-lg text-sm font-medium btn-primary"
             >
               {registering ? "Registering…" : "Register"}

@@ -5,12 +5,10 @@
 
 export const deployedAddresses = {
   chainId: 31337,
-  StealthMetaAddressRegistry: "0x43ca3D2C94be00692D207C6A1e60D8B325c6f12f" as const,
-  StealthAddressAnnouncer: "0xb09da8a5B236fE0295A345035287e80bb0008290" as const,
-  /** Mock USDC (run deploy script to get real address) */
-  USDC: "0x0000000000000000000000000000000000000000" as const,
-  /** Mock USDT (run deploy script to get real address) */
-  USDT: "0x0000000000000000000000000000000000000000" as const,
+  StealthMetaAddressRegistry: "0x5095d3313C76E8d29163e40a0223A5816a8037D8" as const,
+  StealthAddressAnnouncer: "0x391342f5acAcaaC9DE1dC4eC3E03f2678f7c78F1" as const,
+  USDC: "0x6d925938Edb8A16B3035A4cF34FAA090f490202a" as const,
+  USDT: "0xED8CAB8a931A4C0489ad3E3FB5BdEA84f74fD23E" as const,
 } as const;
 
 export type DeployedAddresses = typeof deployedAddresses;

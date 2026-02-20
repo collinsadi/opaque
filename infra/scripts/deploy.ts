@@ -110,6 +110,23 @@ export type DeployedAddresses = typeof deployedAddresses;
   );
   console.log("Wrote frontend/src/contracts/deployedAddresses.ts");
 
+  // Write deployed-addresses.json for MULTICHAIN_CONFIG (contract-config.ts)
+  const deployedJson = {
+    chainId,
+    registry: addresses.StealthMetaAddressRegistry,
+    announcer: addresses.StealthAddressAnnouncer,
+    tokens: {
+      USDC: (addresses as Record<string, string>).USDC ?? "0x0000000000000000000000000000000000000000",
+      USDT: (addresses as Record<string, string>).USDT ?? "0x0000000000000000000000000000000000000000",
+    },
+  };
+  fs.writeFileSync(
+    path.join(FRONTEND_CONTRACTS, "deployed-addresses.json"),
+    JSON.stringify(deployedJson, null, 2),
+    "utf-8"
+  );
+  console.log("Wrote frontend/src/contracts/deployed-addresses.json");
+
   // Copy ABIs (only the ABI array as JSON for smaller files)
   for (const contractName of ["StealthMetaAddressRegistry", "StealthAddressAnnouncer", "MockERC20"]) {
     const artifact = loadArtifact(contractName);

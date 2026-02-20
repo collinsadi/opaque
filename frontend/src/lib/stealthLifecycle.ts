@@ -21,7 +21,7 @@ import {
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { useVaultStore } from "../store/vaultStore";
-import { deployedAddresses } from "../contracts/deployedAddresses";
+import { getConfigForChain } from "../contracts/contract-config";
 import { STEALTH_ANNOUNCER_ABI, SCHEME_ID_SECP256K1 } from "./contracts";
 
 // -----------------------------------------------------------------------------
@@ -108,7 +108,10 @@ export class StealthScanner {
     getKeys: () => MasterKeys;
   }) {
     this.publicClient = opts.publicClient;
-    this.announcerAddress = opts.announcerAddress ?? (deployedAddresses.StealthAddressAnnouncer as Address);
+    this.announcerAddress =
+      opts.announcerAddress ??
+      (getConfigForChain(opts.chain.id)?.announcer as Address) ??
+      ("0x0000000000000000000000000000000000000000" as Address);
     this.chain = opts.chain;
     this.wasm = opts.wasm;
     this.getKeys = opts.getKeys;

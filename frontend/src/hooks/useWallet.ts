@@ -5,6 +5,7 @@ import { getAppChain } from "../lib/chain";
 type WalletState = {
   isConnected: boolean;
   address: Address | null;
+  chainId: number | null;
   isConnecting: boolean;
   error: string | null;
 };
@@ -13,6 +14,7 @@ export function useWallet() {
   const [state, setState] = useState<WalletState>({
     isConnected: false,
     address: null,
+    chainId: null,
     isConnecting: false,
     error: null,
   });
@@ -20,7 +22,7 @@ export function useWallet() {
   const checkConnection = useCallback(async () => {
     const ethereum = (window as unknown as { ethereum?: EIP1193Provider }).ethereum;
     if (!ethereum?.request) {
-      setState((prev) => ({ ...prev, isConnected: false, address: null }));
+      setState((prev) => ({ ...prev, isConnected: false, address: null, chainId: null }));
       return;
     }
 
@@ -30,21 +32,26 @@ export function useWallet() {
         transport: custom(ethereum as EIP1193Provider),
       });
       const accounts = await client.requestAddresses();
+      let chainId: number | null = null;
       if (accounts.length > 0) {
+        const hexChainId = await ethereum.request({ method: "eth_chainId" });
+        chainId = typeof hexChainId === "string" ? parseInt(hexChainId, 16) : null;
         setState({
           isConnected: true,
           address: accounts[0],
+          chainId,
           isConnecting: false,
           error: null,
         });
       } else {
-        setState((prev) => ({ ...prev, isConnected: false, address: null }));
+        setState((prev) => ({ ...prev, isConnected: false, address: null, chainId: null }));
       }
     } catch (error) {
       setState((prev) => ({
         ...prev,
         isConnected: false,
         address: null,
+        chainId: null,
         error: error instanceof Error ? error.message : "Failed to check connection",
       }));
     }
@@ -70,9 +77,12 @@ export function useWallet() {
       });
       const accounts = await client.requestAddresses();
       if (accounts.length > 0) {
+        const hexChainId = await ethereum.request({ method: "eth_chainId" });
+        const chainId = typeof hexChainId === "string" ? parseInt(hexChainId, 16) : null;
         setState({
           isConnected: true,
           address: accounts[0],
+          chainId,
           isConnecting: false,
           error: null,
         });
@@ -124,12 +134,18 @@ export function useWallet() {
             ...prev,
             isConnected: false,
             address: null,
+            chainId: null,
           }));
         }
       };
 
-      const handleChainChanged = () => {
-        // Recheck connection when chain changes
+      const handleChainChanged = (hexChainId?: string) => {
+        const chainId =
+          typeof hexChainId === "string" ? parseInt(hexChainId, 16) : null;
+        setState((prev) => ({
+          ...prev,
+          chainId,
+        }));
         checkConnection();
       };
 
@@ -149,6 +165,7 @@ export function useWallet() {
     setState({
       isConnected: false,
       address: null,
+      chainId: null,
       isConnecting: false,
       error: null,
     });

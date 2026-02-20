@@ -1,20 +1,12 @@
 /**
  * StealthMetaAddressRegistry — resolve meta-address by standard ETH address and check registration.
- *
- * WHERE THE REGISTRY IS USED:
- * - Lookup (read): In this file, resolveMetaAddress() and isRegistered() call the Registry contract's
- *   stealthMetaAddressOf(registrant, schemeId) via a viem public client (RPC read). The contract
- *   stores a mapping from (address, schemeId) → 66-byte stealth meta-address.
- * - Registration (write): Not in this file. RegistrationView.tsx encodes registerKeys(schemeId, stealthMetaAddress)
- *   and sends a transaction to REGISTRY_ADDRESS so the user's wallet signs and submits the write.
- * - Send flow: SendView.tsx uses resolveMetaAddress() in a useEffect when the user enters a 42-char
- *   ETH address; the resolved 66-byte meta-address is then used to compute the one-time stealth address.
+ * Uses chain-specific registry address from contract-config.
  */
 
 import { createPublicClient, http, getAddress, type Address, type Hex } from "viem";
-import { getAppChain } from "./chain";
+import { getChain } from "./chain";
 import { SCHEME_ID_SECP256K1 } from "./contracts";
-import { deployedAddresses } from "../contracts/deployedAddresses";
+import { getConfigForChain } from "../contracts/contract-config";
 
 const STEALTH_REGISTRY_ABI = [
   {
@@ -39,44 +31,58 @@ const STEALTH_REGISTRY_ABI = [
   },
 ] as const;
 
-const REGISTRY_ADDRESS = deployedAddresses.StealthMetaAddressRegistry as Address;
-
-function getPublicClient() {
-  return createPublicClient({
-    chain: getAppChain(),
-    transport: http(),
-  });
-}
-
 /**
  * Resolves a standard Ethereum address to its 66-byte stealth meta-address via the Registry.
- * Calls stealthMetaAddressOf(registrant, schemeId) on the Registry contract.
  *
  * @param address - Standard 42-char ETH address (0x + 40 hex)
- * @returns The 66-byte stealth meta-address as hex, or null if not registered / invalid
+ * @param chainId - Chain id for registry contract (e.g. from useWallet().chainId)
+ * @returns The 66-byte stealth meta-address as hex, or null if not registered / invalid / unsupported chain
  */
-export async function resolveMetaAddress(address: string): Promise<Hex | null> {
+export async function resolveMetaAddress(
+  address: string,
+  chainId: number | null
+): Promise<Hex | null> {
+  if (chainId == null) return null;
+  const config = getConfigForChain(chainId);
+  if (!config) return null;
+  const chain = getChain(chainId);
+  const rpcUrl = chain.rpcUrls?.default?.http?.[0];
+  if (!rpcUrl) return null;
+  const client = createPublicClient({
+    chain,
+    transport: http(rpcUrl),
+  });
   const normalized = getAddress(address.trim());
-  const client = getPublicClient();
   const bytes = await client.readContract({
-    address: REGISTRY_ADDRESS,
+    address: config.registry,
     abi: STEALTH_REGISTRY_ABI,
     functionName: "stealthMetaAddressOf",
     args: [normalized, SCHEME_ID_SECP256K1],
   });
   if (!bytes || typeof bytes !== "string") return null;
   const hex = bytes as Hex;
-  // 66 bytes = 132 hex chars + "0x"
   if (hex.length !== 2 + 66 * 2) return null;
   return hex;
 }
 
 /**
- * Returns whether the given address has a stealth meta-address registered.
+ * Returns whether the given address has a stealth meta-address registered on the given chain.
  */
-export async function isRegistered(address: string): Promise<boolean> {
-  const meta = await resolveMetaAddress(address);
+export async function isRegistered(
+  address: string,
+  chainId: number | null
+): Promise<boolean> {
+  if (chainId == null) return false;
+  const meta = await resolveMetaAddress(address, chainId);
   return meta != null && meta.length === 2 + 66 * 2;
 }
 
-export { REGISTRY_ADDRESS, STEALTH_REGISTRY_ABI };
+/**
+ * Registry address for a chain. Use for registration tx; null if chain not supported.
+ */
+export function getRegistryAddress(chainId: number | null): Address | null {
+  const config = getConfigForChain(chainId);
+  return config?.registry ?? null;
+}
+
+export { STEALTH_REGISTRY_ABI };

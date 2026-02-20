@@ -1,11 +1,10 @@
 /**
- * Token configuration by chain. Easy to update for new chains or tokens.
+ * Token configuration by chain. Driven by MULTICHAIN_CONFIG (contract-config.ts).
  * Native ETH is represented as symbol "ETH" with address null.
- * For chain 31337 (local), token addresses come from deployedAddresses after deploy.
  */
 
 import type { Address } from "viem";
-import { deployedAddresses } from "../contracts/deployedAddresses";
+import { MULTICHAIN_CONFIG } from "../contracts/contract-config";
 
 export type TokenInfo = {
   symbol: string;
@@ -20,22 +19,16 @@ export type ChainTokens = {
   tokens: TokenInfo[];
 };
 
-/** ChainId -> supported tokens. Add new chains here. */
-export const TOKENS_BY_CHAIN: Record<number, ChainTokens> = {
-  31337: {
-    native: { symbol: "ETH", name: "Ether", decimals: 18, address: null },
-    tokens: [
-      { symbol: "USDC", name: "USD Coin", decimals: 6, address: deployedAddresses.USDC as Address },
-      { symbol: "USDT", name: "Tether USD", decimals: 6, address: deployedAddresses.USDT as Address },
-    ],
-  },
-  1: {
-    native: { symbol: "ETH", name: "Ether", decimals: 18, address: null },
-    tokens: [
-      { symbol: "USDC", name: "USD Coin", decimals: 6, address: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48" as Address },
-      { symbol: "USDT", name: "Tether USD", decimals: 6, address: "0xdAC17F958D2ee523a2206206994597C13D831ec7" as Address },
-    ],
-  },
+const NATIVE_ETH: TokenInfo = {
+  symbol: "ETH",
+  name: "Ether",
+  decimals: 18,
+  address: null,
+};
+
+const TOKEN_META: Record<string, { name: string; decimals: number }> = {
+  USDC: { name: "USD Coin", decimals: 6 },
+  USDT: { name: "Tether USD", decimals: 6 },
 };
 
 const ERC20_BALANCE_ABI = [
@@ -49,15 +42,26 @@ const ERC20_BALANCE_ABI = [
 ] as const;
 
 /**
- * Get tokens config for a chain. Returns native + tokens; addresses for mocks may be zero until deployed.
+ * Get tokens config for a chain from MULTICHAIN_CONFIG. Only tokens listed for that chain are returned.
  */
 export function getTokensForChain(chainId: number): ChainTokens {
-  const config = TOKENS_BY_CHAIN[chainId];
-  if (config) return config;
-  return {
-    native: { symbol: "ETH", name: "Ether", decimals: 18, address: null },
-    tokens: [],
-  };
+  const config = MULTICHAIN_CONFIG[chainId];
+  if (!config?.tokens) {
+    return { native: NATIVE_ETH, tokens: [] };
+  }
+  const tokens: TokenInfo[] = [];
+  for (const [symbol, address] of Object.entries(config.tokens)) {
+    const meta = TOKEN_META[symbol];
+    if (meta && address && address !== "0x0000000000000000000000000000000000000000") {
+      tokens.push({
+        symbol,
+        name: meta.name,
+        decimals: meta.decimals,
+        address: address as Address,
+      });
+    }
+  }
+  return { native: NATIVE_ETH, tokens };
 }
 
 /**

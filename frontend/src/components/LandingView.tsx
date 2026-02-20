@@ -5,11 +5,12 @@
 
 import { useState } from "react";
 import { createWalletClient, custom, encodeFunctionData, type EIP1193Provider } from "viem";
-import { getAppChain } from "../lib/chain";
+import { getAppChain, getChain } from "../lib/chain";
 import { useKeys } from "../context/KeysContext";
 import { useWallet } from "../hooks/useWallet";
-import { isRegistered, REGISTRY_ADDRESS, STEALTH_REGISTRY_ABI } from "../lib/registry";
+import { isRegistered, getRegistryAddress, STEALTH_REGISTRY_ABI } from "../lib/registry";
 import { SCHEME_ID_SECP256K1 } from "../lib/contracts";
+import { getConfigForChain } from "../contracts/contract-config";
 
 const SETUP_MESSAGE =
   "Sign this message to derive your Opaque Cash stealth keys. This does not approve any transaction.";
@@ -18,7 +19,8 @@ type Phase = "idle" | "connecting" | "signing" | "checking" | "register" | "regi
 
 export function LandingView() {
   const { setFromSignature, isSetup, stealthMetaAddressHex } = useKeys();
-  const { isConnected, address, isConnecting, connect } = useWallet();
+  const { isConnected, address, chainId, isConnecting, connect } = useWallet();
+  const currentConfig = getConfigForChain(chainId);
   const [phase, setPhase] = useState<Phase>("idle");
   const [error, setError] = useState<string | null>(null);
   const [txHash, setTxHash] = useState<string | null>(null);
@@ -48,7 +50,7 @@ export function LandingView() {
       const ethereum = (window as unknown as { ethereum?: EIP1193Provider }).ethereum;
       if (!ethereum?.request) throw new Error("No wallet found.");
       const client = createWalletClient({
-        chain: getAppChain(),
+        chain: chainId != null ? getChain(chainId) : getAppChain(),
         transport: custom(ethereum as EIP1193Provider),
       });
       const [acc] = await client.requestAddresses();
@@ -64,7 +66,7 @@ export function LandingView() {
     setPhase("checking");
     let registered: boolean;
     try {
-      registered = await isRegistered(address);
+      registered = await isRegistered(address, chainId);
     } catch (e) {
       setError("Failed to check registration.");
       setPhase("error");
@@ -80,7 +82,9 @@ export function LandingView() {
   };
 
   const handleRegister = async () => {
-    if (!stealthMetaAddressHex || !address) return;
+    if (!stealthMetaAddressHex || !address || chainId == null || !currentConfig) return;
+    const registryAddress = getRegistryAddress(chainId);
+    if (!registryAddress) return;
     setError(null);
     setTxHash(null);
     setPhase("registering");
@@ -88,7 +92,7 @@ export function LandingView() {
       const ethereum = (window as unknown as { ethereum?: EIP1193Provider }).ethereum;
       if (!ethereum?.request) throw new Error("No wallet found.");
       const client = createWalletClient({
-        chain: getAppChain(),
+        chain: getChain(chainId),
         transport: custom(ethereum),
       });
       const calldata = encodeFunctionData({
@@ -98,7 +102,7 @@ export function LandingView() {
       });
       const hash = await client.sendTransaction({
         account: address,
-        to: REGISTRY_ADDRESS,
+        to: registryAddress,
         data: calldata,
         value: 0n,
       });
@@ -162,7 +166,8 @@ export function LandingView() {
             <button
               type="button"
               onClick={handleRegister}
-              className="w-full py-3.5 px-6 rounded-xl text-sm font-medium bg-white text-black hover:opacity-90 transition-opacity"
+              disabled={!currentConfig}
+              className="w-full py-3.5 px-6 rounded-xl text-sm font-medium bg-white text-black hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Register
             </button>

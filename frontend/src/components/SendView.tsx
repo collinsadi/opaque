@@ -9,16 +9,14 @@ import {
   type Hex,
   type EIP1193Provider,
 } from "viem";
-import { getAppChain } from "../lib/chain";
+import { getChain } from "../lib/chain";
 import { useKeys } from "../context/KeysContext";
+import { useWallet } from "../hooks/useWallet";
 import { computeStealthAddressAndViewTag } from "../lib/stealth";
 import { resolveMetaAddress } from "../lib/registry";
-import {
-  STEALTH_ANNOUNCER_ABI,
-  SCHEME_ID_SECP256K1,
-  DEFAULT_ANNOUNCER_ADDRESS,
-} from "../lib/contracts";
+import { STEALTH_ANNOUNCER_ABI, SCHEME_ID_SECP256K1 } from "../lib/contracts";
 import { getSelectableAssets } from "../lib/tokens";
+import { getConfigForChain } from "../contracts/contract-config";
 import type { TokenInfo } from "../lib/tokens";
 import { ProtocolStepper } from "./ProtocolStepper";
 import type { ProtocolStep } from "./ProtocolStepper";
@@ -38,9 +36,6 @@ const ERC20_TRANSFER_ABI = [
   },
 ] as const;
 
-const ANNOUNCER: Address =
-  (import.meta.env.VITE_ANNOUNCER_ADDRESS as Address) || DEFAULT_ANNOUNCER_ADDRESS;
-
 function bytesToHex(b: Uint8Array): string {
   return "0x" + Array.from(b).map((x) => x.toString(16).padStart(2, "0")).join("");
 }
@@ -57,11 +52,12 @@ function isDirectMetaAddress(s: string): boolean {
 
 export function SendView() {
   const { isSetup } = useKeys();
+  const { chainId } = useWallet();
   const { push: logPush } = useProtocolLog();
   const pushTx = useTxHistoryStore((s) => s.push);
-  const chain = getAppChain();
-  const chainId = chain.id;
-  const assets = getSelectableAssets(chainId);
+  const currentConfig = getConfigForChain(chainId);
+  const chain = chainId != null ? getChain(chainId) : null;
+  const assets = chainId != null ? getSelectableAssets(chainId) : [];
   const [recipientMeta, setRecipientMeta] = useState("");
   const [resolvedMeta, setResolvedMeta] = useState<Hex | null>(null);
   const [resolving, setResolving] = useState(false);
@@ -75,14 +71,14 @@ export function SendView() {
   useEffect(() => {
     const raw = recipientMeta.trim();
     const with0x = raw.startsWith("0x") ? raw : "0x" + raw;
-    if (!isEthAddress(with0x)) {
+    if (!isEthAddress(with0x) || chainId == null) {
       setResolvedMeta(null);
       return;
     }
     let cancelled = false;
     setResolving(true);
     setResolvedMeta(null);
-    resolveMetaAddress(with0x)
+    resolveMetaAddress(with0x, chainId)
       .then((meta) => {
         if (!cancelled && meta) setResolvedMeta(meta);
       })
@@ -95,11 +91,16 @@ export function SendView() {
     return () => {
       cancelled = true;
     };
-  }, [recipientMeta]);
+  }, [recipientMeta, chainId]);
 
   const handleSend = async () => {
     setError(null);
     setTxHash(null);
+    if (!currentConfig || chainId == null || !chain) {
+      setError("Unsupported network. Switch to a supported chain.");
+      return;
+    }
+    const announcerAddress = currentConfig.announcer;
     const meta = recipientMeta.trim();
     if (!meta || !amount) {
       console.log("📤 [Opaque] Send validation: missing meta or amount");
@@ -143,7 +144,7 @@ export function SendView() {
       const ethereum = (window as unknown as { ethereum?: EIP1193Provider }).ethereum;
       if (!ethereum?.request) throw new Error("No wallet found.");
       const client = createWalletClient({
-        chain: getAppChain(),
+        chain,
         transport: custom(ethereum),
       });
       const [from] = await client.requestAddresses();
@@ -212,7 +213,7 @@ export function SendView() {
         });
         await client.sendTransaction({
           account: from,
-          to: ANNOUNCER,
+          to: announcerAddress,
           data: announceCalldata,
           value: 0n,
         });
@@ -293,7 +294,7 @@ export function SendView() {
           });
           await client.sendTransaction({
             account: from,
-            to: ANNOUNCER,
+            to: announcerAddress,
             data: announceCalldata,
             value: 0n,
           });
@@ -450,7 +451,7 @@ export function SendView() {
         <button
           type="button"
           onClick={handleSend}
-          disabled={sending}
+          disabled={sending || !currentConfig}
           className={`w-full py-2.5 px-4 rounded-lg text-sm font-medium btn-primary ${sending ? "loading" : ""}`}
         >
           {sending ? "Sending…" : "Send"}

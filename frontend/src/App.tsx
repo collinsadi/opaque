@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { KeysProvider, useKeys } from "./context/KeysContext";
 import { hasCompletedOnboardingTour, runOnboardingTour } from "./lib/onboardingTour";
 import { ProtocolLogProvider } from "./context/ProtocolLogContext";
@@ -6,6 +6,7 @@ import { ToastProvider, useToast } from "./context/ToastContext";
 import { LandingPage } from "./components/LandingPage";
 import { LandingView } from "./components/LandingView";
 import { DashboardView } from "./components/DashboardView";
+import { RegistrationWizard } from "./components/RegistrationWizard";
 import { SendView } from "./components/SendView";
 import { PrivateBalanceView } from "./components/PrivateBalanceView";
 import { TransactionHistoryView } from "./components/TransactionHistoryView";
@@ -14,16 +15,31 @@ import { SubENSView } from "./components/SubENSView";
 import { ProfileView } from "./components/ProfileView";
 import { ProtocolLogPanel } from "./components/ProtocolLogPanel";
 import { Layout, type Tab } from "./components/Layout";
+import { NetworkGuard } from "./components/NetworkGuard";
 import { useWallet } from "./hooks/useWallet";
+import { useRegistrationStatus } from "./hooks/useRegistrationStatus";
 import { useVaultStore } from "./store/vaultStore";
 
 function AppContent() {
   const [tab, setTab] = useState<Tab>("dashboard");
   const [onboardingPhase, setOnboardingPhase] = useState<"landing" | "entry">("landing");
+  const [registrationJustCompleted, setRegistrationJustCompleted] = useState(false);
   useKeys();
-  const { isConnected, address, isConnecting, connect, disconnect } = useWallet();
+  const { isConnected, address, chainId, isConnecting, connect, disconnect } = useWallet();
   const { isSetup, clearKeys } = useKeys();
+  const { isRegistered, isLoading: isRegistrationCheckLoading } = useRegistrationStatus(address, chainId);
   const clearVault = useVaultStore((s) => s.clear);
+
+  useEffect(() => {
+    setRegistrationJustCompleted(false);
+  }, [chainId]);
+
+  const showDashboard = isRegistered || registrationJustCompleted;
+  const showRegistrationWizard = isSetup && isConnected && address && chainId != null && !showDashboard && !isRegistrationCheckLoading;
+
+  const handleRegistrationComplete = useCallback(() => {
+    setRegistrationJustCompleted(true);
+  }, []);
 
   const handleTab = (t: Tab) => {
     if (t === "subens") return;
@@ -35,6 +51,12 @@ function AppContent() {
     const timer = setTimeout(() => runOnboardingTour(), 600);
     return () => clearTimeout(timer);
   }, [tab, isConnected, isSetup]);
+
+  useEffect(() => {
+    if (!registrationJustCompleted || tab !== "dashboard") return;
+    const timer = setTimeout(() => runOnboardingTour(true), 800);
+    return () => clearTimeout(timer);
+  }, [registrationJustCompleted, tab]);
 
   const handleConnect = async () => {
     await connect();
@@ -70,6 +92,43 @@ function AppContent() {
     );
   }
 
+  if (isRegistrationCheckLoading) {
+    return (
+      <Layout
+        tab="dashboard"
+        onTabChange={handleTab}
+        isConnected={isConnected}
+        address={address ?? undefined}
+        isConnecting={isConnecting}
+        onConnect={handleConnect}
+        onDisconnect={handleDisconnect}
+        protocolLog={<ProtocolLogPanel />}
+      >
+        <div className="flex flex-col items-center justify-center min-h-[40vh] gap-4">
+          <div className="w-8 h-8 border-2 border-white/30 border-t-white rounded-full animate-spin" aria-hidden />
+          <p className="text-sm text-neutral-500">Authenticating with Protocol…</p>
+        </div>
+      </Layout>
+    );
+  }
+
+  if (showRegistrationWizard) {
+    return (
+      <Layout
+        tab={tab}
+        onTabChange={handleTab}
+        isConnected={isConnected}
+        address={address ?? undefined}
+        isConnecting={isConnecting}
+        onConnect={handleConnect}
+        onDisconnect={handleDisconnect}
+        protocolLog={<ProtocolLogPanel />}
+      >
+        <RegistrationWizard onComplete={handleRegistrationComplete} />
+      </Layout>
+    );
+  }
+
   return (
     <Layout
       tab={tab}
@@ -81,7 +140,7 @@ function AppContent() {
       onDisconnect={handleDisconnect}
       protocolLog={<ProtocolLogPanel />}
     >
-      {renderView()}
+      <NetworkGuard>{renderView()}</NetworkGuard>
     </Layout>
   );
 }

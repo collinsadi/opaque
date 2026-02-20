@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { createPublicClient, http, formatEther, hexToBytes, getAddress, isAddress } from "viem";
-import { getAppChain } from "../lib/chain";
-import { deployedAddresses } from "../contracts/deployedAddresses";
+import { getChain } from "../lib/chain";
+import { getConfigForChain } from "../contracts/contract-config";
 import { STEALTH_ANNOUNCER_ABI } from "../lib/contracts";
 import { useOpaqueWasm } from "../hooks/useOpaqueWasm";
 import { useKeys } from "../context/KeysContext";
@@ -40,6 +40,7 @@ if (!ANNOUNCEMENT_EVENT) throw new Error("Announcement event not found in STEALT
 
 type FetchFoundTxsOpts = {
   publicClient: ReturnType<typeof createPublicClient>;
+  announcerAddress: `0x${string}`;
   wasm: OpaqueWasmModule | null;
   getMasterKeys: (() => MasterKeys) | null;
   chainId: number;
@@ -56,9 +57,8 @@ function toHexBytes(hex: string): Uint8Array {
 }
 
 async function fetchFoundTxs(opts: FetchFoundTxsOpts): Promise<FoundTx[]> {
-  const { publicClient, wasm, getMasterKeys } = opts;
+  const { publicClient, announcerAddress, wasm, getMasterKeys } = opts;
   console.log("📥 [Opaque] PrivateBalance: fetchFoundTxs (getLogs)…");
-  const announcerAddress = deployedAddresses.StealthAddressAnnouncer as `0x${string}`;
 
   const rawLogs = await publicClient.getLogs({
     address: announcerAddress,
@@ -214,14 +214,14 @@ async function fetchFoundTxs(opts: FetchFoundTxsOpts): Promise<FoundTx[]> {
   return found;
 }
 
-async function fetchScanningStatus(): Promise<{
+async function fetchScanningStatus(chainId: number): Promise<{
   scanning: boolean;
   progressPercent: number;
   lastBlock: number;
   message?: string;
 }> {
   console.log("📥 [Opaque] PrivateBalance: fetchScanningStatus…");
-  const chain = getAppChain();
+  const chain = getChain(chainId);
   const rpcUrl = chain.rpcUrls?.default?.http?.[0];
   if (!rpcUrl) {
     return { scanning: false, progressPercent: 0, lastBlock: 0, message: "No RPC URL" };
@@ -261,14 +261,15 @@ export function PrivateBalanceView() {
   const [selectedAsset, setSelectedAsset] = useState<TokenInfo | null>(null);
   const { wasm, isReady: wasmReady } = useOpaqueWasm();
   const keysContext = useKeys();
-  const { address: mainWalletAddress } = useWallet();
+  const { address: mainWalletAddress, chainId } = useWallet();
+  const currentConfig = getConfigForChain(chainId);
   const { push: logPush } = useProtocolLog();
   const pushTx = useTxHistoryStore((s) => s.push);
-  const chain = getAppChain();
-  const chainId = chain.id;
+  const chain = chainId != null ? getChain(chainId) : null;
   const removeGhost = useGhostAddressStore((s) => s.remove);
 
-  const { native, tokens } = getTokensForChain(chainId);
+  const { native, tokens } =
+    chainId != null ? getTokensForChain(chainId) : { native: { symbol: "ETH", name: "Ether", decimals: 18, address: null }, tokens: [] as TokenInfo[] };
   const allAssets = useMemo(() => [native, ...tokens], [native, tokens]);
 
   const portfolio = useMemo(() => {
@@ -301,6 +302,10 @@ export function PrivateBalanceView() {
     async (tx: FoundTx, destination: string, asset: TokenInfo) => {
       const trimmed = destination.trim();
       if (!tx.privateKey) return;
+      if (!chain || chainId == null) {
+        setClaimError("Unsupported network.");
+        return;
+      }
       const isNative = asset.address === null;
       const amountRaw = isNative ? tx.balance : (tx.tokenBalances[asset.address!] ?? 0n);
       if (amountRaw <= 0n) return;
@@ -428,12 +433,12 @@ export function PrivateBalanceView() {
   );
 
   useEffect(() => {
-    if (!wasmReady || wasm === null) {
+    if (!wasmReady || wasm === null || chainId == null || !currentConfig || !chain) {
+      if (chainId == null || !currentConfig) setLoading(false);
       return;
     }
 
     let cancelled = false;
-    const chain = getAppChain();
     const rpcUrl = chain.rpcUrls?.default?.http?.[0];
     if (!rpcUrl) {
       setLoading(false);
@@ -444,6 +449,7 @@ export function PrivateBalanceView() {
       transport: http(rpcUrl),
     });
     const getMasterKeys = keysContext.isSetup ? keysContext.getMasterKeys : null;
+    const announcerAddress = currentConfig.announcer as `0x${string}`;
 
     logPush("blockchain", "Fetching announcement logs (getLogs)…");
     console.log("📥 [Opaque] PrivateBalance: loading data…");
@@ -451,8 +457,8 @@ export function PrivateBalanceView() {
       setLoading(true);
       try {
         const [txs, status] = await Promise.all([
-          fetchFoundTxs({ publicClient, wasm, getMasterKeys, chainId: chain.id }),
-          fetchScanningStatus(),
+          fetchFoundTxs({ publicClient, announcerAddress, wasm, getMasterKeys, chainId }),
+          fetchScanningStatus(chainId),
         ]);
         if (cancelled) return;
         setLastBlock(status.lastBlock);
@@ -467,7 +473,7 @@ export function PrivateBalanceView() {
         setMessage(status.message ?? null);
         logPush("wasm", `Scan complete: ${txs.length} owned announcement(s), block ${status.lastBlock}`);
 
-        const ghostEntries = useGhostAddressStore.getState().getForChain(chain.id);
+        const ghostEntries = useGhostAddressStore.getState().getForChain(chainId);
         let ghostFound: FoundTx[] = [];
         if (wasm && getMasterKeys && ghostEntries.length > 0) {
           let masterKeys: MasterKeys | null = null;
@@ -501,7 +507,7 @@ export function PrivateBalanceView() {
                 blockNumber: 0,
                 isSpent: false,
               };
-              const { tokens: ghostTokens } = getTokensForChain(chain.id);
+              const { tokens: ghostTokens } = getTokensForChain(chainId);
               for (const t of ghostTokens) {
                 if (!t.address || t.address === "0x0000000000000000000000000000000000000000") continue;
                 try {
@@ -530,7 +536,7 @@ export function PrivateBalanceView() {
     return () => {
       cancelled = true;
     };
-  }, [wasmReady, wasm, keysContext.isSetup]);
+  }, [wasmReady, wasm, keysContext.isSetup, chainId, currentConfig, chain]);
 
   useEffect(() => {
     if (newlyDetectedIds.length === 0) return;

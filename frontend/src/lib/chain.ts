@@ -1,10 +1,10 @@
 /**
- * App chain config driven by VITE_CHAIN_ID / VITE_NETWORK.
- * Update .env (VITE_CHAIN_ID, VITE_NETWORK) to change the target chain for transactions.
+ * App chain config. Use getChain(chainId) for the connected wallet's chain; getAppChain() for env default.
  */
 
 import { defineChain, type Chain } from "viem";
 import { mainnet } from "viem/chains";
+import { sepolia } from "viem/chains";
 
 /** Hardhat local node (default chain for local dev) */
 export const hardhatLocal = defineChain({
@@ -21,28 +21,32 @@ export const hardhatLocal = defineChain({
   },
 });
 
-const KNOWN_CHAINS: Record<number, Chain> = {
+export const KNOWN_CHAINS: Record<number, Chain> = {
   1: mainnet,
+  11155111: sepolia,
   31337: hardhatLocal,
 };
 
 /**
- * Returns the chain the dApp should use for wallet/send transactions.
+ * Returns the Chain for a given chainId. Use for wallet/contract calls when you have the connected chain id.
+ */
+export function getChain(chainId: number): Chain {
+  const known = KNOWN_CHAINS[chainId];
+  if (known) return known;
+  return defineChain({
+    id: chainId,
+    name: `Chain ${chainId}`,
+    nativeCurrency: { decimals: 18, name: "Ether", symbol: "ETH" },
+    rpcUrls: { default: { http: [] } },
+  });
+}
+
+/**
+ * Returns the chain the dApp should use when no wallet is connected (e.g. env default).
  * Set VITE_CHAIN_ID in .env (e.g. 31337 for local Hardhat, 1 for mainnet).
  */
 export function getAppChain(): Chain {
   const raw = import.meta.env.VITE_CHAIN_ID;
   const id = raw ? Number(import.meta.env.VITE_CHAIN_ID) : 31337;
-  const known = KNOWN_CHAINS[id];
-  if (known) {
-    console.log("🔗 [Opaque] getAppChain", { chainId: id, name: known.name });
-    return known;
-  }
-  console.log("🔗 [Opaque] getAppChain (custom)", { chainId: id });
-  return defineChain({
-    id,
-    name: import.meta.env.VITE_NETWORK ?? `Chain ${id}`,
-    nativeCurrency: { decimals: 18, name: "Ether", symbol: "ETH" },
-    rpcUrls: { default: { http: [] } },
-  });
+  return getChain(id);
 }
