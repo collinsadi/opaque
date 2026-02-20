@@ -8,11 +8,12 @@ import { useScanner } from "../hooks/useScanner";
 import type { CachedAnnouncement } from "../lib/opaqueCache";
 import { useKeys } from "../context/KeysContext";
 import { useWallet } from "../hooks/useWallet";
-import { executeStealthWithdrawal } from "../lib/stealthLifecycle";
+import { executeStealthWithdrawal, checkStealthWithdrawalGas } from "../lib/stealthLifecycle";
 import type { MasterKeys } from "../lib/stealthLifecycle";
 import type { ProtocolStep } from "./ProtocolStepper";
 import type { OpaqueWasmModule } from "../hooks/useOpaqueWasm";
 import { ClaimModal } from "./ClaimModal";
+import { GasRequiredModal } from "./GasRequiredModal";
 import { useProtocolLog } from "../context/ProtocolLogContext";
 import { useTxHistoryStore } from "../store/txHistoryStore";
 import { useGhostAddressStore } from "../store/ghostAddressStore";
@@ -220,6 +221,7 @@ export function PrivateBalanceView() {
   const [newlyDetectedIds, setNewlyDetectedIds] = useState<string[]>([]);
   const [claimModalTx, setClaimModalTx] = useState<FoundTx | null>(null);
   const [claimAsset, setClaimAsset] = useState<TokenInfo | null>(null);
+  const [gasRequiredStealthAddress, setGasRequiredStealthAddress] = useState<string | null>(null);
   const [ghostTxs, setGhostTxs] = useState<FoundTx[]>([]);
   const [selectedAsset, setSelectedAsset] = useState<TokenInfo | null>(null);
   const [syncingPaused, setSyncingPaused] = useState(false);
@@ -304,6 +306,33 @@ export function PrivateBalanceView() {
         chain,
         transport: http(rpcUrl),
       });
+
+      // Intercept if stealth address has insufficient ETH for gas (P_balance < G)
+      try {
+        const gasCheck =
+          isNative
+            ? await checkStealthWithdrawalGas(publicClient, tx.address as `0x${string}`, {
+                type: "native",
+                destination: getAddress(trimmed),
+              })
+            : await checkStealthWithdrawalGas(publicClient, tx.address as `0x${string}`, {
+                type: "token",
+                tokenAddress: asset.address!,
+                destination: getAddress(trimmed),
+                tokenBalance: amountRaw,
+              });
+        if (!gasCheck.sufficient) {
+          setClaimModalTx(null);
+          setClaimAsset(null);
+          setClaimError(null);
+          setGasRequiredStealthAddress(tx.address);
+          return;
+        }
+      } catch (gasCheckErr) {
+        // If gas check fails (e.g. RPC), continue and let execute* throw a clearer error
+        console.warn("[Opaque] Gas check failed, proceeding with withdrawal", gasCheckErr);
+      }
+
       setClaimingId(tx.id);
       setClaimError(null);
       setWithdrawalSteps([]);
@@ -775,6 +804,13 @@ export function PrivateBalanceView() {
             setWithdrawalSteps([]);
           }}
           withdrawalSteps={withdrawalSteps}
+        />
+      )}
+
+      {gasRequiredStealthAddress && (
+        <GasRequiredModal
+          stealthAddress={gasRequiredStealthAddress}
+          onClose={() => setGasRequiredStealthAddress(null)}
         />
       )}
     </div>

@@ -417,6 +417,78 @@ export type WithdrawalStatus = {
 
 export type WithdrawalStatusCallback = (status: WithdrawalStatus) => void;
 
+// Minimal ABI for gas estimation (transfer only); full ERC20_TRANSFER_ABI is below.
+const ERC20_TRANSFER_ONLY_ABI = [
+  {
+    type: "function",
+    name: "transfer",
+    inputs: [
+      { name: "to", type: "address", internalType: "address" },
+      { name: "amount", type: "uint256", internalType: "uint256" },
+    ],
+    outputs: [{ name: "", type: "bool", internalType: "bool" }],
+    stateMutability: "nonpayable",
+  },
+] as const;
+
+// -----------------------------------------------------------------------------
+// checkStealthWithdrawalGas: P_balance vs G for UI intercept (no key required)
+// -----------------------------------------------------------------------------
+export type CheckStealthGasResult = {
+  sufficient: boolean;
+  balanceWei: bigint;
+  estimatedGasCostWei: bigint;
+};
+
+async function getGasPriceWei(publicClient: PublicClient): Promise<bigint> {
+  const fees = await publicClient.estimateFeesPerGas().catch(() => null);
+  if (fees && "maxFeePerGas" in fees && fees.maxFeePerGas != null) {
+    return fees.maxFeePerGas;
+  }
+  return publicClient.getGasPrice();
+}
+
+/**
+ * Check if a stealth address has enough ETH to cover gas for a withdrawal.
+ * Use this before calling executeStealthWithdrawal/executeTokenWithdrawal to show
+ * the "Gas Required" modal when P_balance < G.
+ */
+export async function checkStealthWithdrawalGas(
+  publicClient: PublicClient,
+  stealthAddress: Address,
+  options:
+    | { type: "native"; destination: Address }
+    | { type: "token"; tokenAddress: Address; destination: Address; tokenBalance: bigint }
+): Promise<CheckStealthGasResult> {
+  const balanceWei = await publicClient.getBalance({ address: stealthAddress });
+
+  let gasLimit: bigint;
+  if (options.type === "native") {
+    gasLimit = await publicClient.estimateGas({
+      account: stealthAddress,
+      to: options.destination,
+      value: 1n,
+      data: "0x",
+    });
+  } else {
+    gasLimit = await publicClient.estimateGas({
+      account: stealthAddress,
+      to: options.tokenAddress,
+      data: encodeFunctionData({
+        abi: ERC20_TRANSFER_ONLY_ABI,
+        functionName: "transfer",
+        args: [options.destination, options.tokenBalance],
+      }),
+    });
+  }
+
+  const gasPriceWei = await getGasPriceWei(publicClient);
+  const estimatedGasCostWei = gasLimit * gasPriceWei;
+  const sufficient = balanceWei > estimatedGasCostWei;
+
+  return { sufficient, balanceWei, estimatedGasCostWei };
+}
+
 // -----------------------------------------------------------------------------
 // executeStealthWithdrawal: gas-aware sweep (max spendable = balance - gas)
 // -----------------------------------------------------------------------------

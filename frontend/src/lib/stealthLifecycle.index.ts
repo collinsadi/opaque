@@ -10,6 +10,7 @@ export {
   withdrawStealthFunds,
   executeStealthWithdrawal,
   claimStealthFunds,
+  checkStealthWithdrawalGas,
   formatEther,
   type StealthLifecycleWasm,
   type ScanStatus,
@@ -19,5 +20,6 @@ export {
   type WithdrawalStepTag,
   type WithdrawalStatus,
   type WithdrawalStatusCallback,
+  type CheckStealthGasResult,
 } from "./stealthLifecycle";
 export { useVaultStore, type StealthVaultEntry } from "../store/vaultStore";
