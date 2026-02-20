@@ -58,6 +58,21 @@ body {
   padding: 24px;
 }
 
+/* Liquid glass: payment card only – frosted, subtle gradient, distinct from pure black */
+.card-glass {
+  background: linear-gradient(
+    135deg,
+    rgba(17, 17, 17, 0.85) 0%,
+    rgba(10, 10, 10, 0.92) 100%
+  );
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 16px;
+  padding: 24px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+
 .btn-primary {
   background: var(--color-white);
   color: var(--color-black);
@@ -139,4 +154,25 @@ body {
 
 .detection-flash {
   animation: slide-in 0.3s ease-out forwards;
+}
+
+@keyframes privacy-shield {
+  0%, 100% {
+    opacity: 0.7;
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.06);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.05);
+    box-shadow: 0 0 28px 4px rgba(255, 255, 255, 0.06);
+  }
+}
+.privacy-shield {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  border: 2px solid var(--color-border);
+  background: radial-gradient(circle at 30% 30%, var(--color-surface-raised), var(--color-surface));
+  animation: privacy-shield 2.5s ease-in-out infinite;
 }

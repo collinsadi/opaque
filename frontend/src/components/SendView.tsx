@@ -7,6 +7,7 @@ import {
   parseEther,
   parseUnits,
   formatUnits,
+  formatEther,
   encodeFunctionData,
   type Address,
   type Hex,
@@ -338,11 +339,15 @@ export function SendView() {
         setLastStep("ok");
         addStep("done", "Complete — privacy shield active.");
         logPush("blockchain", "Announcement published");
+        const amountFormatted = isNative ? formatEther(value) : formatUnits(value, selectedAsset.decimals);
         pushTx({
           chainId,
           kind: "sent",
           counterparty: metaHex.slice(0, 10) + "…" + metaHex.slice(-8),
           amountWei: value.toString(),
+          tokenSymbol: selectedAsset.symbol,
+          tokenAddress: selectedAsset.address,
+          amount: amountFormatted,
           txHash: hash,
           stealthAddress,
         });
@@ -418,11 +423,15 @@ export function SendView() {
 
           setLastStep("ok");
           addStep("done", "Complete — privacy shield active.");
+          const amountFormattedReg = isNative ? formatEther(value) : formatUnits(value, selectedAsset.decimals);
           pushTx({
             chainId,
             kind: "sent",
             counterparty: with0x.slice(0, 10) + "…" + with0x.slice(-8),
             amountWei: value.toString(),
+            tokenSymbol: selectedAsset.symbol,
+            tokenAddress: selectedAsset.address,
+            amount: amountFormattedReg,
             txHash: hash,
             stealthAddress,
           });
@@ -456,11 +465,15 @@ export function SendView() {
         setTxHash(hash);
         setLastStep("ok");
         addStep("done", "Transfer sent. No on-chain announcement (direct transfer).");
+        const amountFormattedDirect = isNative ? formatEther(value) : formatUnits(value, selectedAsset.decimals);
         pushTx({
           chainId,
           kind: "sent",
           counterparty: with0x.slice(0, 10) + "…" + with0x.slice(-8),
           amountWei: value.toString(),
+          tokenSymbol: selectedAsset.symbol,
+          tokenAddress: selectedAsset.address,
+          amount: amountFormattedDirect,
           txHash: hash,
         });
         return;

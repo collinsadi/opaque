@@ -25,6 +25,18 @@ function statusFor(entry: TxHistoryEntry): string {
   return entry.txHash ? "Confirmed" : "—";
 }
 
+/** Token symbol badge for list display (icon-style: symbol only). */
+function TokenBadge({ symbol }: { symbol: string }) {
+  return (
+    <span
+      className="inline-flex items-center justify-center min-w-9 px-1.5 py-0.5 rounded font-mono text-xs font-medium bg-neutral-800 text-neutral-300 border border-neutral-700"
+      title={symbol}
+    >
+      {symbol}
+    </span>
+  );
+}
+
 function normalizeEntry(raw: unknown, index: number): TxHistoryEntry | null {
   if (raw == null || typeof raw !== "object") return null;
   const o = raw as Record<string, unknown>;
@@ -36,7 +48,10 @@ function normalizeEntry(raw: unknown, index: number): TxHistoryEntry | null {
   const txHash = typeof o.txHash === "string" ? o.txHash : undefined;
   const stealthAddress = typeof o.stealthAddress === "string" ? o.stealthAddress : undefined;
   const timestamp = typeof o.timestamp === "number" ? o.timestamp : Date.now();
-  return { id, chainId, kind, counterparty, amountWei, txHash, stealthAddress, timestamp };
+  const tokenSymbol = typeof o.tokenSymbol === "string" ? o.tokenSymbol : "ETH";
+  const tokenAddress = o.tokenAddress != null && typeof o.tokenAddress === "string" ? (o.tokenAddress as TxHistoryEntry["tokenAddress"]) : null;
+  const amount = typeof o.amount === "string" && o.amount !== "" ? o.amount : formatEther(BigInt(amountWei || "0"));
+  return { id, chainId, kind, counterparty, amountWei, tokenSymbol, tokenAddress, amount, txHash, stealthAddress, timestamp };
 }
 
 export function TransactionHistoryView() {
@@ -95,8 +110,9 @@ export function TransactionHistoryView() {
                 >
                   {typeLabel(tx.kind)}
                 </span>
-                <span className="text-white font-mono text-sm">
-                  {formatEther(BigInt(tx.amountWei || "0"))} ETH
+                <span className="flex items-center gap-2 text-white font-mono text-sm">
+                  <TokenBadge symbol={tx.tokenSymbol} />
+                  <span>{tx.amount} {tx.tokenSymbol}</span>
                 </span>
                 <span className="text-neutral-500 text-xs shrink-0">
                   {statusFor(tx)}

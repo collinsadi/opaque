@@ -399,11 +399,17 @@ export function PrivateBalanceView() {
           );
         }
         const isGhost = tx.id.startsWith("ghost-");
+        const amountFormatted = isNative
+          ? formatEther(amountRaw)
+          : (Number(amountRaw) / 10 ** asset.decimals).toFixed(asset.decimals);
         pushTx({
           chainId,
           kind: isGhost ? "ghost" : "received",
           counterparty: isGhost ? "Manual Ghost" : tx.address.slice(0, 10) + "…",
           amountWei: amountRaw.toString(),
+          tokenSymbol: asset.symbol,
+          tokenAddress: asset.address,
+          amount: amountFormatted,
           txHash: undefined,
           stealthAddress: tx.address,
         });
