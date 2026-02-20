@@ -11,6 +11,8 @@ export {
   executeStealthWithdrawal,
   claimStealthFunds,
   checkStealthWithdrawalGas,
+  deriveStealthPrivateKeyFromGhostEntry,
+  withdrawFromGhostAddress,
   formatEther,
   type StealthLifecycleWasm,
   type ScanStatus,
@@ -21,5 +23,6 @@ export {
   type WithdrawalStatus,
   type WithdrawalStatusCallback,
   type CheckStealthGasResult,
+  type WithdrawFromGhostAsset,
 } from "./stealthLifecycle";
 export { useVaultStore, type StealthVaultEntry } from "../store/vaultStore";

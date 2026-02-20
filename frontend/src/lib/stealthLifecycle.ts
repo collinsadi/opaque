@@ -21,7 +21,10 @@ import {
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { useVaultStore } from "../store/vaultStore";
+import { useGhostAddressStore } from "../store/ghostAddressStore";
+import type { GhostEntry } from "../store/ghostAddressStore";
 import { getConfigForChain } from "../contracts/contract-config";
+import { secp256k1 } from "@noble/curves/secp256k1";
 import { getRpcUrl } from "./chain";
 import { STEALTH_ANNOUNCER_ABI, SCHEME_ID_SECP256K1 } from "./contracts";
 
@@ -801,6 +804,95 @@ export async function executeTokenWithdrawal(
       : { gasPrice: gasPriceWei }),
   });
   report("DONE", "Token transfer sent.", hash);
+  return hash;
+}
+
+// -----------------------------------------------------------------------------
+// Ghost address withdrawal: match entry, derive key (p = k + hash(S)), execute, cleanup
+// -----------------------------------------------------------------------------
+
+/**
+ * Derive the one-time stealth private key for a ghost address using stored
+ * ephemeral private key and the user's root spending key.
+ * Formula: p = k + hash(S) where k = spending key, S = shared secret (view_priv * R_ephemeral).
+ */
+export function deriveStealthPrivateKeyFromGhostEntry(
+  ghostEntry: GhostEntry,
+  masterKeys: MasterKeys,
+  wasm: StealthLifecycleWasm
+): Hex {
+  if (!ghostEntry.ephemeralPrivKeyHex) {
+    throw new Error("Ghost entry has no ephemeral private key; cannot derive stealth key.");
+  }
+  const ephemeralPrivBytes = hexToBytes(ghostEntry.ephemeralPrivKeyHex);
+  if (ephemeralPrivBytes.length !== 32) {
+    throw new Error("Invalid ephemeral private key length.");
+  }
+  const ephemeralPubKey = secp256k1.getPublicKey(ephemeralPrivBytes, true);
+  const stealthPrivKeyBytes = wasm.reconstruct_signing_key_wasm(
+    masterKeys.spendPrivKey,
+    masterKeys.viewPrivKey,
+    ephemeralPubKey
+  );
+  const hexKey =
+    "0x" +
+    Array.from(stealthPrivKeyBytes)
+      .map((b) => b.toString(16).padStart(2, "0"))
+      .join("");
+  return hexKey as Hex;
+}
+
+export type WithdrawFromGhostAsset =
+  | { type: "native" }
+  | { type: "token"; tokenAddress: Address };
+
+/**
+ * Withdraw from a ghost address: find entry by stealthAddress + chainId,
+ * derive stealth private key, execute sweep (ETH or ERC20 with gas deduction),
+ * then remove the entry from opaque-ghost-addresses.
+ */
+export async function withdrawFromGhostAddress(
+  stealthAddress: Address,
+  chainId: number,
+  destinationAddress: Address,
+  asset: WithdrawFromGhostAsset,
+  publicClient: PublicClient,
+  getMasterKeys: () => MasterKeys,
+  wasm: StealthLifecycleWasm,
+  onStatus?: WithdrawalStatusCallback
+): Promise<Hash> {
+  const entry = useGhostAddressStore.getState().getEntry(stealthAddress, chainId);
+  if (!entry) {
+    throw new Error(`Ghost address ${stealthAddress} not found for chain ${chainId}.`);
+  }
+  const masterKeys = getMasterKeys();
+  const stealthPrivKey = deriveStealthPrivateKeyFromGhostEntry(entry, masterKeys, wasm);
+
+  const report = (tag: WithdrawalStepTag, label: string, detail?: string) => {
+    onStatus?.({ tag, label, detail });
+  };
+  report("CALC", "Reconstructing one-time private key from ghost entry…");
+
+  let hash: Hash;
+  if (asset.type === "native") {
+    hash = await executeStealthWithdrawal(
+      stealthPrivKey,
+      destinationAddress,
+      publicClient,
+      onStatus
+    );
+  } else {
+    hash = await executeTokenWithdrawal(
+      stealthPrivKey,
+      asset.tokenAddress,
+      destinationAddress,
+      publicClient,
+      onStatus
+    );
+  }
+
+  useGhostAddressStore.getState().remove(stealthAddress, chainId);
+  console.log("📤 [Opaque] Ghost entry removed from storage after withdrawal.", { stealthAddress: stealthAddress.slice(0, 14) + "…", chainId });
   return hash;
 }
 

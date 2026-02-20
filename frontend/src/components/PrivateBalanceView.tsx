@@ -8,7 +8,7 @@ import { useScanner } from "../hooks/useScanner";
 import type { CachedAnnouncement } from "../lib/opaqueCache";
 import { useKeys } from "../context/KeysContext";
 import { useWallet } from "../hooks/useWallet";
-import { executeStealthWithdrawal, checkStealthWithdrawalGas } from "../lib/stealthLifecycle";
+import { executeStealthWithdrawal, checkStealthWithdrawalGas, withdrawFromGhostAddress } from "../lib/stealthLifecycle";
 import type { MasterKeys } from "../lib/stealthLifecycle";
 import type { ProtocolStep } from "./ProtocolStepper";
 import type { OpaqueWasmModule } from "../hooks/useOpaqueWasm";
@@ -245,7 +245,6 @@ export function PrivateBalanceView() {
     [ghostStoreEntries, chainId]
   );
   const addGhost = useGhostAddressStore((s) => s.add);
-  const removeGhost = useGhostAddressStore((s) => s.remove);
   const watchlistAdd = useWatchlistStore((s) => s.add);
   const watchlistArchive = useWatchlistStore((s) => s.archive);
   const { showToast } = useToast();
@@ -314,7 +313,12 @@ export function PrivateBalanceView() {
   const handleClaim = useCallback(
     async (tx: FoundTx, destination: string, asset: TokenInfo) => {
       const trimmed = destination.trim();
-      if (!tx.privateKey) return;
+      const isGhost = tx.id.startsWith("ghost-");
+      if (!isGhost && !tx.privateKey) return;
+      if (isGhost && (!keysContext.isSetup || !wasm)) {
+        setClaimError("Keys or WASM not ready for ghost withdrawal.");
+        return;
+      }
       if (!chain || chainId == null) {
         setClaimError("Unsupported network.");
         return;
@@ -409,37 +413,49 @@ export function PrivateBalanceView() {
       };
       let withdrawalHash: string | undefined;
       try {
-        if (isNative) {
-          withdrawalHash = await executeStealthWithdrawal(
-            tx.privateKey as `0x${string}`,
+        if (isGhost) {
+          withdrawalHash = await withdrawFromGhostAddress(
+            tx.address as `0x${string}`,
+            chainId,
             getAddress(trimmed),
+            isNative ? { type: "native" } : { type: "token", tokenAddress: asset.address! },
             publicClient,
+            keysContext.getMasterKeys!,
+            wasm!,
             onStatus
           );
         } else {
-          withdrawalHash = await executeTokenWithdrawal(
-            tx.privateKey as `0x${string}`,
-            asset.address!,
-            getAddress(trimmed),
-            publicClient,
-            onStatus
-          );
-          setFound((prev) =>
-            prev.map((t) =>
-              t.id === tx.id
-                ? { ...t, tokenBalances: { ...t.tokenBalances, [asset.address!]: 0n } }
-                : t
-            )
-          );
-          setGhostTxs((prev) =>
-            prev.map((t) =>
-              t.id === tx.id
-                ? { ...t, tokenBalances: { ...t.tokenBalances, [asset.address!]: 0n } }
-                : t
-            )
-          );
+          if (isNative) {
+            withdrawalHash = await executeStealthWithdrawal(
+              tx.privateKey as `0x${string}`,
+              getAddress(trimmed),
+              publicClient,
+              onStatus
+            );
+          } else {
+            withdrawalHash = await executeTokenWithdrawal(
+              tx.privateKey as `0x${string}`,
+              asset.address!,
+              getAddress(trimmed),
+              publicClient,
+              onStatus
+            );
+            setFound((prev) =>
+              prev.map((t) =>
+                t.id === tx.id
+                  ? { ...t, tokenBalances: { ...t.tokenBalances, [asset.address!]: 0n } }
+                  : t
+              )
+            );
+            setGhostTxs((prev) =>
+              prev.map((t) =>
+                t.id === tx.id
+                  ? { ...t, tokenBalances: { ...t.tokenBalances, [asset.address!]: 0n } }
+                  : t
+              )
+            );
+          }
         }
-        const isGhost = tx.id.startsWith("ghost-");
         const amountFormatted = isNative
           ? formatEther(amountRaw)
           : (Number(amountRaw) / 10 ** asset.decimals).toFixed(asset.decimals);
@@ -457,8 +473,7 @@ export function PrivateBalanceView() {
         if (withdrawalHash && chainId != null) {
           showToast("Withdrawal successful", { explorerTx: { chainId, txHash: withdrawalHash } });
         }
-        if (isGhost && isNative) {
-          removeGhost(tx.address, chainId);
+        if (isGhost) {
           setGhostTxs((prev) => prev.filter((t) => t.id !== tx.id));
         } else if (isNative) {
           setFound((prev) =>
@@ -479,7 +494,7 @@ export function PrivateBalanceView() {
         setClaimingId(null);
       }
     },
-    [chainId, chain, pushTx, removeGhost, showToast]
+    [chainId, chain, pushTx, showToast, keysContext.isSetup, keysContext.getMasterKeys, wasm]
   );
 
   const handleRetrySync = useCallback(async () => {

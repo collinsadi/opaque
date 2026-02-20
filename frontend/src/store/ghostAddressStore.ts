@@ -22,6 +22,8 @@ type GhostState = {
   entries: GhostEntry[];
   add: (entry: Omit<GhostEntry, "createdAt">) => void;
   remove: (stealthAddress: string, chainId: number) => void;
+  /** Find a single entry by stealthAddress and chainId (for withdrawal matching). */
+  getEntry: (stealthAddress: string, chainId: number) => GhostEntry | undefined;
   getForChain: (chainId: number) => GhostEntry[];
 };
 
@@ -46,6 +48,13 @@ export const useGhostAddressStore = create<GhostState>()(
               e.stealthAddress.toLowerCase() !== stealthAddress.toLowerCase()
           ),
         })),
+
+      getEntry: (stealthAddress, chainId) =>
+        get().entries.find(
+          (e) =>
+            e.chainId === chainId &&
+            e.stealthAddress.toLowerCase() === stealthAddress.toLowerCase()
+        ),
 
       getForChain: (chainId) =>
         get().entries.filter((e) => e.chainId === chainId),
