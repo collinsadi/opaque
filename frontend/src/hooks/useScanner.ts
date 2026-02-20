@@ -77,12 +77,16 @@ export type UseScannerOptions = {
   publicClient: PublicClient | null;
   announcerAddress: `0x${string}` | null;
   enabled: boolean;
+  /** Addresses from "Pending Manual Receives" (ghost addresses) to check balance for manual sync */
+  ghostAddresses?: `0x${string}`[];
 };
 
 export type UseScannerResult = {
   /** All cached + newly synced announcements for the chain (raw, not yet matched with WASM) */
   announcements: CachedAnnouncement[];
   progress: ScanProgress;
+  /** Native balance per ghost address (manual scan). Use for displaying/claiming manual receives. */
+  ghostBalances: Record<string, bigint>;
   /** Whether we are in "back-fill" (cache was empty, scanning from START_BLOCK) */
   isBackfilling: boolean;
   /** Trigger a full rescan from deployment block (clears cache for this chain) */
@@ -232,8 +236,9 @@ export function processInIdleBatches<T, R>(
 }
 
 export function useScanner(opts: UseScannerOptions): UseScannerResult {
-  const { chainId, publicClient, announcerAddress, enabled } = opts;
+  const { chainId, publicClient, announcerAddress, enabled, ghostAddresses = [] } = opts;
   const [announcements, setAnnouncements] = useState<CachedAnnouncement[]>([]);
+  const [ghostBalances, setGhostBalances] = useState<Record<string, bigint>>({});
   const [progress, setProgress] = useState<ScanProgress>({
     phase: "idle",
     percent: 0,
@@ -466,9 +471,37 @@ export function useScanner(opts: UseScannerOptions): UseScannerResult {
     });
   }, []);
 
+  // Manual scan: check balances of every address in "Pending Manual Receives"
+  useEffect(() => {
+    if (!publicClient || ghostAddresses.length === 0) {
+      setGhostBalances({});
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const results = await Promise.all(
+          ghostAddresses.map((addr) => publicClient.getBalance({ address: addr }))
+        );
+        if (cancelled) return;
+        const next: Record<string, bigint> = {};
+        ghostAddresses.forEach((addr, i) => {
+          next[addr.toLowerCase()] = results[i] ?? 0n;
+        });
+        setGhostBalances(next);
+      } catch {
+        if (!cancelled) setGhostBalances({});
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [publicClient, ghostAddresses.join(",")]);
+
   return {
     announcements,
     progress,
+    ghostBalances,
     isBackfilling,
     retrySync,
     refresh,

@@ -94,10 +94,17 @@ function DesktopNav({
           )}
           {isConnected && address && (
             <>
-              <button
-                type="button"
+              <div
+                role="button"
+                tabIndex={0}
                 onClick={() => setDropdownOpen((o) => !o)}
-                className="flex items-center gap-2 px-2 py-1.5 rounded-lg border border-border bg-neutral-900 hover:border-neutral-700 transition-colors"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    setDropdownOpen((o) => !o);
+                  }
+                }}
+                className="flex items-center gap-2 px-2 py-1.5 rounded-lg border border-border bg-neutral-900 hover:border-neutral-700 transition-colors cursor-pointer"
                 data-tour="meta"
               >
                 <img
@@ -112,7 +119,7 @@ function DesktopNav({
                 >
                   <AddressDisplay address={address} />
                 </span>
-              </button>
+              </div>
               {dropdownOpen && (
                 <div className="absolute right-0 top-full mt-1 py-1 w-48 rounded-lg border border-border bg-neutral-900 shadow-xl z-30">
                   <button

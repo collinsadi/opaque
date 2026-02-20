@@ -1,6 +1,7 @@
 /**
- * Manual "ghost" receive addresses: ephemeral key + stealth address per chain.
- * Used for one-time receive without on-chain announcement; scanner/monitor can check balance.
+ * "Pending Manual Receives" — manual ghost receive addresses per chain.
+ * Used for one-time receive without on-chain announcement; scanner checks balance via multicall.
+ * Persisted (localStorage) so the app can monitor and claim incoming funds.
  */
 
 import { create } from "zustand";
@@ -10,8 +11,8 @@ import type { Address } from "viem";
 export type GhostEntry = {
   chainId: number;
   stealthAddress: Address;
-  /** Hex 0x... 32-byte ephemeral private key for key reconstruction */
-  ephemeralPrivKeyHex: string;
+  /** Hex 0x... 32-byte ephemeral private key for key reconstruction. Omitted when importing by address only (balance visible, claim requires key). */
+  ephemeralPrivKeyHex?: string;
   createdAt: number;
 };
 

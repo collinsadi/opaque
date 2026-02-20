@@ -16,6 +16,7 @@ import { useWallet } from "../hooks/useWallet";
 import { getConfigForChain, isChainSupported } from "../contracts/contract-config";
 import { Layout } from "./Layout";
 import { ProtocolLogPanel } from "./ProtocolLogPanel";
+import { useToast } from "../context/ToastContext";
 
 const MINT_DECIMALS = 6;
 const MINT_AMOUNT_RAW = 200;
@@ -40,6 +41,7 @@ type ClaimStatus = "idle" | "loading" | "success" | "error";
 
 export function FaucetPage() {
   const { isConnected, address, chainId, connect, isConnecting, disconnect } = useWallet();
+  const { showToast } = useToast();
   const config = getConfigForChain(chainId);
   const chain = chainId != null ? getChain(chainId) : null;
   const supported = isChainSupported(chainId);
@@ -87,13 +89,16 @@ export function FaucetPage() {
         functionName: "mint",
         args: [address, MINT_AMOUNT_WEI],
       });
-      await client.sendTransaction({
+      const hash = await client.sendTransaction({
         account: from,
         to: tokenAddress,
         value: 0n,
         data,
       });
       setStatus("success");
+      showToast("Transaction successful", {
+        explorerTx: chainId != null ? { chainId, txHash: hash } : undefined,
+      });
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Transaction failed";
       setClaimError(msg);

@@ -18,10 +18,12 @@ import { useProtocolLog } from "../context/ProtocolLogContext";
 import { useTxHistoryStore } from "../store/txHistoryStore";
 import { useGhostAddressStore } from "../store/ghostAddressStore";
 import { useVaultStore } from "../store/vaultStore";
+import { useToast } from "../context/ToastContext";
 import { secp256k1 } from "@noble/curves/secp256k1";
 import { getTokensForChain, ERC20_BALANCE_ABI } from "../lib/tokens";
 import type { TokenInfo } from "../lib/tokens";
 import { executeTokenWithdrawal } from "../lib/stealthLifecycle";
+import { ExplorerLink } from "./ExplorerLink";
 
 export type FoundTx = {
   id: string;
@@ -233,7 +235,17 @@ export function PrivateBalanceView() {
   const { push: logPush } = useProtocolLog();
   const pushTx = useTxHistoryStore((s) => s.push);
   const chain = chainId != null ? getChain(chainId) : null;
+  const ghostStoreEntries = useGhostAddressStore((s) => s.entries);
+  const ghostEntries = useMemo(
+    () => ghostStoreEntries.filter((e) => e.chainId === (chainId ?? 0)),
+    [ghostStoreEntries, chainId]
+  );
+  const addGhost = useGhostAddressStore((s) => s.add);
   const removeGhost = useGhostAddressStore((s) => s.remove);
+  const { showToast } = useToast();
+  const [manualImportOpen, setManualImportOpen] = useState(false);
+  const [manualImportAddress, setManualImportAddress] = useState("");
+  const [manualImportError, setManualImportError] = useState<string | null>(null);
 
   const rpcUrl = chain ? getRpcUrl(chain) : undefined;
   const publicClient = useMemo(() => {
@@ -241,11 +253,17 @@ export function PrivateBalanceView() {
     return createPublicClient({ chain, transport: http(rpcUrl) });
   }, [chain, rpcUrl]);
 
+  const ghostAddresses = useMemo(
+    () => ghostEntries.map((g) => g.stealthAddress as `0x${string}`),
+    [ghostEntries]
+  );
+
   const scanner = useScanner({
     chainId,
     publicClient,
     announcerAddress: currentConfig?.announcer ?? null,
     enabled: Boolean(wasmReady && chainId && currentConfig),
+    ghostAddresses,
   });
 
   const { native, tokens } =
@@ -374,16 +392,17 @@ export function PrivateBalanceView() {
           return steps;
         });
       };
+      let withdrawalHash: string | undefined;
       try {
         if (isNative) {
-          await executeStealthWithdrawal(
+          withdrawalHash = await executeStealthWithdrawal(
             tx.privateKey as `0x${string}`,
             getAddress(trimmed),
             publicClient,
             onStatus
           );
         } else {
-          await executeTokenWithdrawal(
+          withdrawalHash = await executeTokenWithdrawal(
             tx.privateKey as `0x${string}`,
             asset.address!,
             getAddress(trimmed),
@@ -417,9 +436,12 @@ export function PrivateBalanceView() {
           tokenSymbol: asset.symbol,
           tokenAddress: asset.address,
           amount: amountFormatted,
-          txHash: undefined,
+          txHash: withdrawalHash,
           stealthAddress: tx.address,
         });
+        if (withdrawalHash && chainId != null) {
+          showToast("Withdrawal successful", { explorerTx: { chainId, txHash: withdrawalHash } });
+        }
         if (isGhost && isNative) {
           removeGhost(tx.address, chainId);
           setGhostTxs((prev) => prev.filter((t) => t.id !== tx.id));
@@ -442,7 +464,7 @@ export function PrivateBalanceView() {
         setClaimingId(null);
       }
     },
-    [chainId, chain, pushTx, removeGhost]
+    [chainId, chain, pushTx, removeGhost, showToast]
   );
 
   const handleRetrySync = useCallback(async () => {
@@ -503,39 +525,50 @@ export function PrivateBalanceView() {
     }
   }, [scanner.progress.phase, scanner.progress.error]);
 
+  // Build ghostTxs from Pending Manual Receives using scanner.ghostBalances (manual scan)
   useEffect(() => {
-    if (chainId == null || !publicClient || !wasm || !keysContext.isSetup) return;
-    const getMasterKeys = keysContext.getMasterKeys;
-    const ghostEntries = useGhostAddressStore.getState().getForChain(chainId);
-    if (ghostEntries.length === 0) {
+    if (chainId == null || !publicClient || !wasm) return;
+    const { ghostBalances } = scanner;
+    const entriesWithBalance = ghostEntries.filter(
+      (g) => (ghostBalances[g.stealthAddress.toLowerCase()] ?? 0n) > 0n
+    );
+    if (entriesWithBalance.length === 0) {
       setGhostTxs([]);
       return;
     }
     let cancelled = false;
+    const getMasterKeys = keysContext.isSetup ? keysContext.getMasterKeys : null;
     (async () => {
       let masterKeys: MasterKeys | null = null;
-      try {
-        masterKeys = getMasterKeys();
-      } catch {
-        setGhostTxs([]);
-        return;
+      if (getMasterKeys) {
+        try {
+          masterKeys = getMasterKeys();
+        } catch {
+          /* optional: we can still show balance without key */
+        }
       }
       const ghostFound: FoundTx[] = [];
-      for (const g of ghostEntries) {
+      for (const g of entriesWithBalance) {
         if (cancelled) return;
-        const balance = await publicClient.getBalance({ address: g.stealthAddress });
-        if (balance === 0n) continue;
-        const ephemeralPubKey = secp256k1.getPublicKey(toHexBytes(g.ephemeralPrivKeyHex), true);
-        const stealthPrivKeyBytes = wasm.reconstruct_signing_key_wasm(
-          masterKeys!.spendPrivKey,
-          masterKeys!.viewPrivKey,
-          ephemeralPubKey
-        );
-        const privateKey =
-          "0x" +
-          Array.from(stealthPrivKeyBytes)
-            .map((b) => b.toString(16).padStart(2, "0"))
-            .join("");
+        const balance = ghostBalances[g.stealthAddress.toLowerCase()] ?? 0n;
+        let privateKey: string | undefined;
+        if (g.ephemeralPrivKeyHex && masterKeys) {
+          try {
+            const ephemeralPubKey = secp256k1.getPublicKey(toHexBytes(g.ephemeralPrivKeyHex), true);
+            const stealthPrivKeyBytes = wasm.reconstruct_signing_key_wasm(
+              masterKeys.spendPrivKey,
+              masterKeys.viewPrivKey,
+              ephemeralPubKey
+            );
+            privateKey =
+              "0x" +
+              Array.from(stealthPrivKeyBytes)
+                .map((b) => b.toString(16).padStart(2, "0"))
+                .join("");
+          } catch {
+            /* omit key if reconstruction fails */
+          }
+        }
         const ghostTx: FoundTx = {
           id: `ghost-${g.stealthAddress}`,
           address: g.stealthAddress,
@@ -556,8 +589,8 @@ export function PrivateBalanceView() {
               functionName: "balanceOf",
               args: [g.stealthAddress as `0x${string}`],
             });
-            const balance = typeof raw === "bigint" ? raw : BigInt(String(raw));
-            if (balance > 0n) ghostTx.tokenBalances[t.address] = balance;
+            const tokenBal = typeof raw === "bigint" ? raw : BigInt(String(raw));
+            if (tokenBal > 0n) ghostTx.tokenBalances[t.address] = tokenBal;
           } catch {
             /* ignore */
           }
@@ -569,7 +602,7 @@ export function PrivateBalanceView() {
     return () => {
       cancelled = true;
     };
-  }, [chainId, publicClient, wasm, keysContext.isSetup]);
+  }, [chainId, publicClient, wasm, keysContext.isSetup, ghostEntries, scanner.ghostBalances]);
 
   useEffect(() => {
     if (newlyDetectedIds.length === 0) return;
@@ -587,6 +620,17 @@ export function PrivateBalanceView() {
         <p className="text-sm text-neutral-500 mb-6">
           Total assets (ETH, USDC, USDT) across your stealth addresses. Click an asset to see addresses and withdraw.
         </p>
+        <button
+          type="button"
+          onClick={() => {
+            setManualImportOpen(true);
+            setManualImportAddress("");
+            setManualImportError(null);
+          }}
+          className="mb-4 px-3 py-1.5 text-sm rounded-lg border border-neutral-600 text-neutral-300 hover:bg-neutral-800 hover:border-neutral-500 transition-colors"
+        >
+          Missing a Payment?
+        </button>
 
         {/* Scanning status (IndexedDB cache + adaptive RPC) */}
         <div
@@ -709,9 +753,12 @@ export function PrivateBalanceView() {
                     className="card flex flex-wrap items-center justify-between gap-3"
                   >
                     <div className="min-w-0">
-                      <p className="text-neutral-400 font-mono text-xs truncate">
-                        {tx.address}
-                      </p>
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                        <ExplorerLink chainId={chainId} value={tx.address} type="address" className="text-neutral-400 text-xs" />
+                        {tx.txHash && (
+                          <ExplorerLink chainId={chainId} value={tx.txHash} type="tx" className="text-neutral-500 text-xs" startChars={8} endChars={6} />
+                        )}
+                      </div>
                       <p className="text-success font-semibold mt-0.5">
                         {amountStr} {selectedAsset.symbol}
                       </p>
@@ -791,6 +838,7 @@ export function PrivateBalanceView() {
           asset={claimAsset}
           destination={destinationByTxId[claimModalTx.id] ?? ""}
           mainWalletAddress={mainWalletAddress ?? undefined}
+          chainId={chainId}
           claiming={claimingId === claimModalTx.id}
           error={claimError}
           onDestinationChange={(value: string) => setDestination(claimModalTx.id, value)}
@@ -812,6 +860,75 @@ export function PrivateBalanceView() {
           stealthAddress={gasRequiredStealthAddress}
           onClose={() => setGasRequiredStealthAddress(null)}
         />
+      )}
+
+      {/* Manual import: paste a ghost address to add to tracking and check for funds */}
+      {manualImportOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60" onClick={() => setManualImportOpen(false)}>
+          <div
+            className="card max-w-md w-full p-6 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-lg font-semibold text-white mb-1">Import Ghost Address</h3>
+            <p className="text-sm text-neutral-500 mb-4">
+              Paste a 0x ghost address you previously generated. It will be added to the tracking list and checked for funds. Without the ephemeral key (from the device where you generated it), you can see the balance but not claim.
+            </p>
+            <input
+              type="text"
+              value={manualImportAddress}
+              onChange={(e) => {
+                setManualImportAddress(e.target.value);
+                setManualImportError(null);
+              }}
+              placeholder="0x…"
+              className="input-field w-full mb-2 font-mono text-sm"
+            />
+            {manualImportError && (
+              <p className="text-error text-xs mb-2">{manualImportError}</p>
+            )}
+            <div className="flex gap-2 justify-end">
+              <button
+                type="button"
+                onClick={() => setManualImportOpen(false)}
+                className="px-3 py-1.5 rounded-lg text-sm btn-secondary"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const trimmed = manualImportAddress.trim();
+                  if (!trimmed) {
+                    setManualImportError("Enter an address.");
+                    return;
+                  }
+                  if (!isAddress(trimmed)) {
+                    setManualImportError("Invalid 0x address.");
+                    return;
+                  }
+                  if (chainId == null) {
+                    setManualImportError("Connect to a network first.");
+                    return;
+                  }
+                  const addr = getAddress(trimmed);
+                  const exists = ghostEntries.some(
+                    (e) => e.stealthAddress.toLowerCase() === addr.toLowerCase()
+                  );
+                  if (exists) {
+                    setManualImportError("Address is already in the tracking list.");
+                    return;
+                  }
+                  addGhost({ chainId, stealthAddress: addr });
+                  setManualImportOpen(false);
+                  showToast("Ghost address added. Checking for funds…");
+                }}
+                className="px-3 py-1.5 rounded-lg text-sm font-medium bg-white text-black hover:opacity-90"
+              >
+                Add and check
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

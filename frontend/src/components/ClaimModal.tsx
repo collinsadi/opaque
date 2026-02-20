@@ -3,12 +3,14 @@ import type { FoundTx } from "./PrivateBalanceView";
 import type { TokenInfo } from "../lib/tokens";
 import { ProtocolStepper } from "./ProtocolStepper";
 import type { ProtocolStep } from "./ProtocolStepper";
+import { ExplorerLink } from "./ExplorerLink";
 
 type ClaimModalProps = {
   tx: FoundTx;
   asset: TokenInfo;
   destination: string;
   mainWalletAddress: string | undefined;
+  chainId: number | null;
   claiming: boolean;
   error: string | null;
   withdrawalSteps?: ProtocolStep[];
@@ -27,6 +29,7 @@ export function ClaimModal({
   asset,
   destination,
   mainWalletAddress,
+  chainId,
   claiming,
   error,
   withdrawalSteps = [],
@@ -66,7 +69,7 @@ export function ClaimModal({
 
         <div className="mb-4 p-3 rounded-lg bg-neutral-900 border border-border font-mono text-xs text-neutral-400">
           <div className="flex justify-between items-center gap-2">
-            <span className="text-neutral-300 break-all">{tx.address.slice(0, 10)}…{tx.address.slice(-8)}</span>
+            <ExplorerLink chainId={chainId} value={tx.address} type="address" className="text-neutral-300" />
             <span className="text-success font-medium shrink-0">{amountStr} {asset.symbol}</span>
           </div>
         </div>

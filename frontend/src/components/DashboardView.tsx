@@ -1,18 +1,19 @@
 import type { Tab } from "./Layout";
-import { AddressDisplay } from "./AddressDisplay";
+import { ExplorerLink } from "./ExplorerLink";
 
 type DashboardViewProps = {
   onNavigate: (t: Tab) => void;
   address?: string;
+  chainId: number | null;
 };
 
-export function DashboardView({ onNavigate, address }: DashboardViewProps) {
+export function DashboardView({ onNavigate, address, chainId }: DashboardViewProps) {
   return (
     <div className="w-full max-w-2xl mx-auto">
       <div className="flex flex-wrap items-center justify-between gap-3 mb-1">
         <h2 className="text-lg font-semibold text-white">Dashboard</h2>
         {address && (
-          <AddressDisplay address={address} className="shrink-0" />
+          <ExplorerLink chainId={chainId} value={address} type="address" className="shrink-0 text-neutral-400" />
         )}
       </div>
       <p className="text-sm text-neutral-500 mb-8">

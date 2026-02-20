@@ -1,4 +1,5 @@
 import { getAppChain } from "../lib/chain";
+import { getExplorerTxUrl } from "../lib/explorer";
 import { useTxHistoryStore } from "../store/txHistoryStore";
 import type { TxHistoryEntry } from "../store/txHistoryStore";
 import { formatEther } from "viem";
@@ -120,17 +121,22 @@ export function TransactionHistoryView() {
                 <span className="text-neutral-400 text-sm truncate max-w-[120px] md:max-w-[200px] ml-auto" title={tx.counterparty ?? ""}>
                   {tx.counterparty ?? "—"}
                 </span>
-                {tx.txHash && (
-                  <a
-                    href={`${getAppChain().blockExplorers?.default?.url ?? ""}/tx/${tx.txHash}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-neutral-500 hover:text-neutral-400 text-xs font-mono truncate max-w-[80px]"
-                    title={tx.txHash}
-                  >
-                    Confirmed
-                  </a>
-                )}
+                {tx.txHash && (() => {
+                  const explorerUrl = getExplorerTxUrl(tx.chainId, tx.txHash);
+                  return explorerUrl ? (
+                    <a
+                      href={explorerUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-neutral-500 hover:text-neutral-400 text-xs font-mono truncate max-w-[80px] inline-flex items-center gap-1"
+                      title={tx.txHash}
+                    >
+                      Confirmed ↗
+                    </a>
+                  ) : (
+                    <span className="text-neutral-500 text-xs">Confirmed</span>
+                  );
+                })()}
               </li>
             ))}
           </ul>

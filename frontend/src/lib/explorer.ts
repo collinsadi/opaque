@@ -1,0 +1,25 @@
+/**
+ * Block explorer URLs by chainId.
+ * Uses Sepolia for testing (11155111) and Mainnet (1) for production.
+ * ChainId comes from Wagmi/Viem (useWallet().chainId) so links switch automatically.
+ */
+
+const EXPLORER_BASES: Record<number, string> = {
+  1: "https://etherscan.io",
+  11155111: "https://sepolia.etherscan.io",
+  31337: "http://localhost:8545",
+};
+
+export function getExplorerTxUrl(chainId: number, txHash: string | null): string | null {
+  if (!txHash) return null;
+  const base = EXPLORER_BASES[chainId];
+  if (!base) return null;
+  return `${base}/tx/${txHash}`;
+}
+
+export function getExplorerAddressUrl(chainId: number, address: string | null): string | null {
+  if (!address) return null;
+  const base = EXPLORER_BASES[chainId];
+  if (!base) return null;
+  return `${base}/address/${address}`;
+}

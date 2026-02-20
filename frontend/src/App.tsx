@@ -19,6 +19,7 @@ import { NetworkGuard } from "./components/NetworkGuard";
 import { useWallet } from "./hooks/useWallet";
 import { useRegistrationStatus } from "./hooks/useRegistrationStatus";
 import { useVaultStore } from "./store/vaultStore";
+import { getExplorerTxUrl } from "./lib/explorer";
 
 function AppContent() {
   const [tab, setTab] = useState<Tab>("dashboard");
@@ -70,7 +71,7 @@ function AppContent() {
   };
 
   const renderView = () => {
-    if (tab === "dashboard") return <DashboardView onNavigate={setTab} address={address ?? undefined} />;
+    if (tab === "dashboard") return <DashboardView onNavigate={setTab} address={address ?? undefined} chainId={chainId} />;
     if (tab === "send") return <SendView />;
     if (tab === "receive") return <ReceiveView onBack={() => setTab("dashboard")} />;
     if (tab === "balance") return <PrivateBalanceView />;
@@ -145,27 +146,51 @@ function AppContent() {
   );
 }
 
+const ExternalLinkIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+    <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+    <polyline points="15 3 21 3 21 9" />
+    <line x1="10" y1="14" x2="21" y2="3" />
+  </svg>
+);
+
 function ToastLayer() {
   const { toasts, dismiss } = useToast();
   if (toasts.length === 0) return null;
   return (
     <div className="fixed bottom-24 md:bottom-56 left-4 right-4 md:left-auto md:right-6 z-50 flex flex-col gap-2 max-w-sm md:ml-auto">
-      {toasts.map((t) => (
-        <div
-          key={t.id}
-          className="px-4 py-3 rounded-lg bg-neutral-800 border border-neutral-700 text-white text-sm shadow-lg flex items-center justify-between gap-2"
-        >
-          <span>{t.message}</span>
-          <button
-            type="button"
-            onClick={() => dismiss(t.id)}
-            className="text-neutral-400 hover:text-white shrink-0"
-            aria-label="Dismiss"
+      {toasts.map((t) => {
+        const explorerUrl = t.explorerTx ? getExplorerTxUrl(t.explorerTx.chainId, t.explorerTx.txHash) : null;
+        return (
+          <div
+            key={t.id}
+            className="px-4 py-3 rounded-lg bg-neutral-800 border border-neutral-700 text-white text-sm shadow-lg flex flex-wrap items-center justify-between gap-2"
           >
-            ×
-          </button>
-        </div>
-      ))}
+            <span className="min-w-0 flex-1">{t.message}</span>
+            <div className="flex items-center gap-2 shrink-0">
+              {explorerUrl && (
+                <a
+                  href={explorerUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium bg-neutral-700 hover:bg-neutral-600 text-neutral-200"
+                >
+                  <ExternalLinkIcon />
+                  View on Explorer
+                </a>
+              )}
+              <button
+                type="button"
+                onClick={() => dismiss(t.id)}
+                className="text-neutral-400 hover:text-white p-0.5"
+                aria-label="Dismiss"
+              >
+                ×
+              </button>
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }

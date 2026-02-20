@@ -6,11 +6,17 @@ import {
   type ReactNode,
 } from "react";
 
-type Toast = { id: string; message: string };
+export type ToastExplorerTx = { chainId: number; txHash: string };
+
+type Toast = {
+  id: string;
+  message: string;
+  explorerTx?: ToastExplorerTx;
+};
 
 type ToastContextValue = {
   toasts: Toast[];
-  showToast: (message: string) => void;
+  showToast: (message: string, options?: { explorerTx?: ToastExplorerTx }) => void;
   dismiss: (id: string) => void;
 };
 
@@ -19,12 +25,12 @@ const ToastContext = createContext<ToastContextValue | null>(null);
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
 
-  const showToast = useCallback((message: string) => {
+  const showToast = useCallback((message: string, options?: { explorerTx?: ToastExplorerTx }) => {
     const id = `toast-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
-    setToasts((prev) => [...prev, { id, message }]);
+    setToasts((prev) => [...prev, { id, message, explorerTx: options?.explorerTx }]);
     setTimeout(() => {
       setToasts((prev) => prev.filter((t) => t.id !== id));
-    }, 4000);
+    }, 5000);
   }, []);
 
   const dismiss = useCallback((id: string) => {

@@ -161,6 +161,9 @@ export function ReceiveView({ onBack }: { onBack: () => void }) {
             Because the sender is not using the protocol announcer, this address is only discoverable by this specific browser. Backup your vault to ensure you don&apos;t lose access.
           </p>
         </div>
+        <p className="mb-4 px-3 py-2 rounded-lg border border-neutral-600 bg-neutral-800/50 text-neutral-300 text-sm">
+          Receiving from outside Opaque? If you share this 0x address directly, Opaque will track it locally in this browser. To see these funds on other devices, you will need to manually import the address.
+        </p>
         <h2 className="text-lg font-semibold text-white mb-1">Your ghost address</h2>
         <p className="text-sm text-neutral-500 mb-4">
           Share this address with the sender. It is stored locally; the app will detect incoming payments.
