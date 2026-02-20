@@ -17,6 +17,7 @@ import { GasRequiredModal } from "./GasRequiredModal";
 import { useProtocolLog } from "../context/ProtocolLogContext";
 import { useTxHistoryStore } from "../store/txHistoryStore";
 import { useGhostAddressStore } from "../store/ghostAddressStore";
+import { useWatchlist, useWatchlistStore } from "../hooks/useWatchlist";
 import { useVaultStore } from "../store/vaultStore";
 import { useToast } from "../context/ToastContext";
 import { secp256k1 } from "@noble/curves/secp256k1";
@@ -36,6 +37,8 @@ export type FoundTx = {
   blockNumber: number;
   timestamp?: number;
   isSpent?: boolean;
+  /** How this address was found: announcement (subgraph) vs manual/ghost (state-polling). */
+  source?: "announcement" | "manual";
 };
 
 const ANNOUNCEMENT_EVENT = STEALTH_ANNOUNCER_ABI.find(
@@ -180,6 +183,7 @@ async function processRawLogsToFoundTxs(
       txHash: row.txHash,
       blockNumber: row.blockNumber,
       isSpent: false,
+      source: "announcement",
     };
   });
 
@@ -242,6 +246,8 @@ export function PrivateBalanceView() {
   );
   const addGhost = useGhostAddressStore((s) => s.add);
   const removeGhost = useGhostAddressStore((s) => s.remove);
+  const watchlistAdd = useWatchlistStore((s) => s.add);
+  const watchlistArchive = useWatchlistStore((s) => s.archive);
   const { showToast } = useToast();
   const [manualImportOpen, setManualImportOpen] = useState(false);
   const [manualImportAddress, setManualImportAddress] = useState("");
@@ -257,6 +263,14 @@ export function PrivateBalanceView() {
     () => ghostEntries.map((g) => g.stealthAddress as `0x${string}`),
     [ghostEntries]
   );
+  const watchlistAddresses = useWatchlist(chainId ?? 0);
+
+  // Ensure every ghost entry is on the watchlist so they get state-polling (multicall). Use getState() to avoid effect re-running when store updates.
+  useEffect(() => {
+    if (chainId == null) return;
+    const add = useWatchlistStore.getState().add;
+    ghostEntries.forEach((g) => add(chainId, g.stealthAddress));
+  }, [chainId, ghostEntries]);
 
   const scanner = useScanner({
     chainId,
@@ -264,6 +278,7 @@ export function PrivateBalanceView() {
     announcerAddress: currentConfig?.announcer ?? null,
     enabled: Boolean(wasmReady && chainId && currentConfig),
     ghostAddresses,
+    watchlistAddresses: watchlistAddresses.length > 0 ? watchlistAddresses : undefined,
   });
 
   const { native, tokens } =
@@ -525,84 +540,64 @@ export function PrivateBalanceView() {
     }
   }, [scanner.progress.phase, scanner.progress.error]);
 
-  // Build ghostTxs from Pending Manual Receives using scanner.ghostBalances (manual scan)
+  // Build ghostTxs from watchlist/ghost balances (state-polling). Only include addresses we're currently polling (so archived ones drop out after next poll).
   useEffect(() => {
-    if (chainId == null || !publicClient || !wasm) return;
-    const { ghostBalances } = scanner;
-    const entriesWithBalance = ghostEntries.filter(
-      (g) => (ghostBalances[g.stealthAddress.toLowerCase()] ?? 0n) > 0n
-    );
-    if (entriesWithBalance.length === 0) {
+    if (chainId == null || !wasm) return;
+    const { ghostBalances, ghostTokenBalances } = scanner;
+    const hasTokenBalances = Object.keys(ghostTokenBalances).length > 0;
+    const polledAddresses = watchlistAddresses.length > 0 ? watchlistAddresses : ghostAddresses;
+    const addressesWithBalance = polledAddresses.filter((addr) => {
+      const key = addr.toLowerCase();
+      const eth = ghostBalances[key] ?? 0n;
+      const tokens = ghostTokenBalances[key] ?? {};
+      const hasTokens = Object.values(tokens).some((b) => b > 0n);
+      return eth > 0n || hasTokens;
+    });
+    if (addressesWithBalance.length === 0) {
       setGhostTxs([]);
       return;
     }
-    let cancelled = false;
     const getMasterKeys = keysContext.isSetup ? keysContext.getMasterKeys : null;
-    (async () => {
-      let masterKeys: MasterKeys | null = null;
-      if (getMasterKeys) {
+    const ghostFound: FoundTx[] = [];
+    for (const addr of addressesWithBalance) {
+      const key = addr.toLowerCase();
+      const balance = ghostBalances[key] ?? 0n;
+      const tokenBals = hasTokenBalances ? (ghostTokenBalances[key] ?? {}) : {};
+      const g = ghostEntries.find((e) => e.stealthAddress.toLowerCase() === key);
+      let privateKey: string | undefined;
+      if (g?.ephemeralPrivKeyHex && getMasterKeys && wasm) {
         try {
-          masterKeys = getMasterKeys();
+          const masterKeys = getMasterKeys();
+          const ephemeralPubKey = secp256k1.getPublicKey(toHexBytes(g.ephemeralPrivKeyHex), true);
+          const stealthPrivKeyBytes = wasm.reconstruct_signing_key_wasm(
+            masterKeys.spendPrivKey,
+            masterKeys.viewPrivKey,
+            ephemeralPubKey
+          );
+          privateKey =
+            "0x" +
+            Array.from(stealthPrivKeyBytes)
+              .map((b) => b.toString(16).padStart(2, "0"))
+              .join("");
         } catch {
-          /* optional: we can still show balance without key */
+          /* omit key if reconstruction fails */
         }
       }
-      const ghostFound: FoundTx[] = [];
-      for (const g of entriesWithBalance) {
-        if (cancelled) return;
-        const balance = ghostBalances[g.stealthAddress.toLowerCase()] ?? 0n;
-        let privateKey: string | undefined;
-        if (g.ephemeralPrivKeyHex && masterKeys) {
-          try {
-            const ephemeralPubKey = secp256k1.getPublicKey(toHexBytes(g.ephemeralPrivKeyHex), true);
-            const stealthPrivKeyBytes = wasm.reconstruct_signing_key_wasm(
-              masterKeys.spendPrivKey,
-              masterKeys.viewPrivKey,
-              ephemeralPubKey
-            );
-            privateKey =
-              "0x" +
-              Array.from(stealthPrivKeyBytes)
-                .map((b) => b.toString(16).padStart(2, "0"))
-                .join("");
-          } catch {
-            /* omit key if reconstruction fails */
-          }
-        }
-        const ghostTx: FoundTx = {
-          id: `ghost-${g.stealthAddress}`,
-          address: g.stealthAddress,
-          balance,
-          tokenBalances: {},
-          privateKey,
-          txHash: "",
-          blockNumber: 0,
-          isSpent: false,
-        };
-        const { tokens: ghostTokens } = getTokensForChain(chainId);
-        for (const t of ghostTokens) {
-          if (!t.address || t.address === "0x0000000000000000000000000000000000000000") continue;
-          try {
-            const raw = await publicClient.readContract({
-              address: t.address,
-              abi: ERC20_BALANCE_ABI as readonly unknown[],
-              functionName: "balanceOf",
-              args: [g.stealthAddress as `0x${string}`],
-            });
-            const tokenBal = typeof raw === "bigint" ? raw : BigInt(String(raw));
-            if (tokenBal > 0n) ghostTx.tokenBalances[t.address] = tokenBal;
-          } catch {
-            /* ignore */
-          }
-        }
-        ghostFound.push(ghostTx);
-      }
-      if (!cancelled) setGhostTxs(ghostFound);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [chainId, publicClient, wasm, keysContext.isSetup, ghostEntries, scanner.ghostBalances]);
+      const ghostTx: FoundTx = {
+        id: `ghost-${addr}`,
+        address: addr,
+        balance,
+        tokenBalances: tokenBals,
+        privateKey,
+        txHash: "",
+        blockNumber: 0,
+        isSpent: false,
+        source: "manual",
+      };
+      ghostFound.push(ghostTx);
+    }
+    setGhostTxs(ghostFound);
+  }, [chainId, wasm, keysContext.isSetup, ghostEntries, watchlistAddresses, scanner.ghostBalances, scanner.ghostTokenBalances]);
 
   useEffect(() => {
     if (newlyDetectedIds.length === 0) return;
@@ -754,6 +749,11 @@ export function PrivateBalanceView() {
                   >
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                        {tx.source === "manual" && (
+                          <span className="text-xs px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 border border-amber-500/40">
+                            Manual/Ghost Funds
+                          </span>
+                        )}
                         <ExplorerLink chainId={chainId} value={tx.address} type="address" className="text-neutral-400 text-xs" />
                         {tx.txHash && (
                           <ExplorerLink chainId={chainId} value={tx.txHash} type="tx" className="text-neutral-500 text-xs" startChars={8} endChars={6} />
@@ -763,6 +763,19 @@ export function PrivateBalanceView() {
                         {amountStr} {selectedAsset.symbol}
                       </p>
                     </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      {tx.source === "manual" && chainId != null && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            watchlistArchive(chainId, tx.address);
+                            showToast("Address archived. It will no longer be polled for balances.");
+                          }}
+                          className="px-2 py-1 text-xs rounded-md border border-neutral-600 text-neutral-400 hover:bg-neutral-800 hover:text-neutral-300"
+                        >
+                          Archive
+                        </button>
+                      )}
                     <button
                       type="button"
                       disabled={
@@ -778,6 +791,7 @@ export function PrivateBalanceView() {
                     >
                       {claimingId === tx.id ? "Withdrawing…" : "Withdraw"}
                     </button>
+                    </div>
                     <div className="w-full mt-2">
                       <input
                         type="text"
@@ -919,6 +933,7 @@ export function PrivateBalanceView() {
                     return;
                   }
                   addGhost({ chainId, stealthAddress: addr });
+                  watchlistAdd(chainId, addr);
                   setManualImportOpen(false);
                   showToast("Ghost address added. Checking for funds…");
                 }}

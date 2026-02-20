@@ -21,6 +21,8 @@ import {
   type CachedAnnouncement,
 } from "../lib/opaqueCache";
 import { STEALTH_ANNOUNCER_ABI } from "../lib/contracts";
+import { getTokensForChain } from "../lib/tokens";
+import { ERC20_BALANCE_ABI } from "../lib/tokens";
 
 const SUBGRAPH_ANNOUNCEMENTS_LIMIT = 1000;
 
@@ -79,14 +81,24 @@ export type UseScannerOptions = {
   enabled: boolean;
   /** Addresses from "Pending Manual Receives" (ghost addresses) to check balance for manual sync */
   ghostAddresses?: `0x${string}`[];
+  /** Watchlist addresses for state-polling fallback (manual/ghost). Fetched via multicall. */
+  watchlistAddresses?: `0x${string}`[];
+};
+
+/** ETH + ERC20 balances for watchlist addresses (single RPC round-trip via multicall). */
+export type WatchlistBalances = {
+  eth: Record<string, bigint>;
+  tokens: Record<string, Record<string, bigint>>;
 };
 
 export type UseScannerResult = {
   /** All cached + newly synced announcements for the chain (raw, not yet matched with WASM) */
   announcements: CachedAnnouncement[];
   progress: ScanProgress;
-  /** Native balance per ghost address (manual scan). Use for displaying/claiming manual receives. */
+  /** Native balance per ghost/watchlist address (manual scan). Use for displaying/claiming manual receives. */
   ghostBalances: Record<string, bigint>;
+  /** ERC20 balances per address and token (only set when using watchlistAddresses). */
+  ghostTokenBalances: Record<string, Record<string, bigint>>;
   /** Whether we are in "back-fill" (cache was empty, scanning from START_BLOCK) */
   isBackfilling: boolean;
   /** Trigger a full rescan from deployment block (clears cache for this chain) */
@@ -197,6 +209,61 @@ async function fetchLogsAdaptive(
 }
 
 /**
+ * Fetch ETH + ERC20 balances for watchlist addresses in one multicall (tokens) + parallel getBalance (ETH).
+ */
+async function checkWatchlistBalances(
+  publicClient: PublicClient,
+  watchlist: `0x${string}`[],
+  chainId: number
+): Promise<WatchlistBalances> {
+  const { tokens } = getTokensForChain(chainId);
+  const tokenContracts = tokens.filter(
+    (t): t is typeof t & { address: `0x${string}` } =>
+      t.address != null && t.address !== "0x0000000000000000000000000000000000000000"
+  );
+
+  const ethBalances = await Promise.all(
+    watchlist.map((addr) => publicClient.getBalance({ address: addr }))
+  );
+  const eth: Record<string, bigint> = {};
+  watchlist.forEach((addr, i) => {
+    eth[addr.toLowerCase()] = ethBalances[i] ?? 0n;
+  });
+
+  if (tokenContracts.length === 0) {
+    return { eth, tokens: Object.fromEntries(watchlist.map((a) => [a.toLowerCase(), {}])) };
+  }
+
+  const contracts = watchlist.flatMap((addr) =>
+    tokenContracts.map((t) => ({
+      address: t.address,
+      abi: ERC20_BALANCE_ABI,
+      functionName: "balanceOf" as const,
+      args: [addr] as const,
+    }))
+  );
+  const results = await publicClient.multicall({
+    contracts: contracts as Parameters<PublicClient["multicall"]>[0]["contracts"],
+  });
+  const tokensOut: Record<string, Record<string, bigint>> = {};
+  watchlist.forEach((addr) => {
+    tokensOut[addr.toLowerCase()] = {};
+  });
+  let idx = 0;
+  for (const addr of watchlist) {
+    const key = addr.toLowerCase();
+    for (const t of tokenContracts) {
+      const res = results[idx];
+      idx += 1;
+      if (res?.status === "success" && typeof res.result === "bigint") {
+        if (res.result > 0n) tokensOut[key][t.address] = res.result;
+      }
+    }
+  }
+  return { eth, tokens: tokensOut };
+}
+
+/**
  * Process items in batches during idle time to avoid blocking the UI (e.g. WASM matching).
  * Export for use in PrivateBalanceView when matching many cached announcements.
  */
@@ -236,9 +303,10 @@ export function processInIdleBatches<T, R>(
 }
 
 export function useScanner(opts: UseScannerOptions): UseScannerResult {
-  const { chainId, publicClient, announcerAddress, enabled, ghostAddresses = [] } = opts;
+  const { chainId, publicClient, announcerAddress, enabled, ghostAddresses = [], watchlistAddresses = [] } = opts;
   const [announcements, setAnnouncements] = useState<CachedAnnouncement[]>([]);
   const [ghostBalances, setGhostBalances] = useState<Record<string, bigint>>({});
+  const [ghostTokenBalances, setGhostTokenBalances] = useState<Record<string, Record<string, bigint>>>({});
   const [progress, setProgress] = useState<ScanProgress>({
     phase: "idle",
     percent: 0,
@@ -471,37 +539,55 @@ export function useScanner(opts: UseScannerOptions): UseScannerResult {
     });
   }, []);
 
-  // Manual scan: check balances of every address in "Pending Manual Receives"
+  // State-polling: check watchlist balances (ETH + ERC20 via multicall), or fallback to ghostAddresses ETH-only
   useEffect(() => {
-    if (!publicClient || ghostAddresses.length === 0) {
+    const addressesToPoll = watchlistAddresses.length > 0 ? watchlistAddresses : ghostAddresses;
+    if (!publicClient || addressesToPoll.length === 0 || chainId == null) {
       setGhostBalances({});
+      setGhostTokenBalances({});
       return;
     }
     let cancelled = false;
     (async () => {
       try {
-        const results = await Promise.all(
-          ghostAddresses.map((addr) => publicClient.getBalance({ address: addr }))
-        );
-        if (cancelled) return;
-        const next: Record<string, bigint> = {};
-        ghostAddresses.forEach((addr, i) => {
-          next[addr.toLowerCase()] = results[i] ?? 0n;
-        });
-        setGhostBalances(next);
+        if (watchlistAddresses.length > 0 && chainId != null) {
+          const { eth, tokens } = await checkWatchlistBalances(
+            publicClient,
+            watchlistAddresses,
+            chainId
+          );
+          if (cancelled) return;
+          setGhostBalances(eth);
+          setGhostTokenBalances(tokens);
+        } else {
+          const results = await Promise.all(
+            ghostAddresses.map((addr) => publicClient.getBalance({ address: addr }))
+          );
+          if (cancelled) return;
+          const next: Record<string, bigint> = {};
+          ghostAddresses.forEach((addr, i) => {
+            next[addr.toLowerCase()] = results[i] ?? 0n;
+          });
+          setGhostBalances(next);
+          setGhostTokenBalances({});
+        }
       } catch {
-        if (!cancelled) setGhostBalances({});
+        if (!cancelled) {
+          setGhostBalances({});
+          setGhostTokenBalances({});
+        }
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [publicClient, ghostAddresses.join(",")]);
+  }, [publicClient, chainId, ghostAddresses.join(","), watchlistAddresses.join(",")]);
 
   return {
     announcements,
     progress,
     ghostBalances,
+    ghostTokenBalances,
     isBackfilling,
     retrySync,
     refresh,

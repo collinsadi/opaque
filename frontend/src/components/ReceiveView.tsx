@@ -4,6 +4,7 @@ import { useKeys } from "../context/KeysContext";
 import { computeStealthAddressAndViewTag } from "../lib/stealth";
 import { getAppChain } from "../lib/chain";
 import { useGhostAddressStore } from "../store/ghostAddressStore";
+import { useWatchlistStore } from "../hooks/useWatchlist";
 
 type Mode = "choose" | "payment_link" | "manual_ghost";
 
@@ -19,6 +20,7 @@ export function ReceiveView({ onBack }: { onBack: () => void }) {
     ephemeralPrivKeyHex: string;
   } | null>(null);
   const addGhost = useGhostAddressStore((s) => s.add);
+  const watchlistAdd = useWatchlistStore((s) => s.add);
   const chainId = getAppChain().id;
   const qrRef = useRef<HTMLCanvasElement>(null);
   const handleDownloadQR = useCallback(() => {
@@ -127,6 +129,7 @@ export function ReceiveView({ onBack }: { onBack: () => void }) {
         const { stealthAddress, ephemeralPriv } = computeStealthAddressAndViewTag(stealthMetaAddressHex);
         const ephemeralPrivKeyHex = bytesToHex(ephemeralPriv);
         addGhost({ chainId, stealthAddress, ephemeralPrivKeyHex });
+        watchlistAdd(chainId, stealthAddress as `0x${string}`);
         setGhostResult({ stealthAddress, ephemeralPrivKeyHex });
       };
       return (
