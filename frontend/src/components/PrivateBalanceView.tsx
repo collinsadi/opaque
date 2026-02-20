@@ -453,7 +453,10 @@ export function PrivateBalanceView() {
           logPush("wasm", `Matched ${txs.length} owned announcement(s) from cache`);
         })
         .catch((err) => console.warn("📥 [Opaque] Match error", err))
-        .finally(() => setLoading(false));
+        .finally(() => {
+          setLoading(false);
+          scanner.markSyncComplete();
+        });
     };
 
     if (typeof requestIdleCallback !== "undefined") {

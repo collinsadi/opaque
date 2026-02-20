@@ -7,9 +7,7 @@ import {
   afterAll
 } from "matchstick-as/assembly/index"
 import { BigInt, Address, Bytes } from "@graphprotocol/graph-ts"
-import { Announcement } from "../generated/schema"
-import { Announcement as AnnouncementEvent } from "../generated/StealthAddressAnnouncer/StealthAddressAnnouncer"
-import { handleAnnouncement } from "../src/stealth-address-announcer"
+import { handleAnnouncement } from "../src/mapping"
 import { createAnnouncementEvent } from "./stealth-address-announcer-utils"
 
 // Tests structure (matchstick-as >=0.5.0)
@@ -40,18 +38,21 @@ describe("Describe entity assertions", () => {
     clearStore()
   })
 
-  // For more test scenarios, see:
-  // https://thegraph.com/docs/en/subgraphs/developing/creating/unit-testing-framework/#write-a-unit-test
-
-  test("Announcement created and stored", () => {
+  test("Announcement created and stored with raw hex fields for stealth derivation", () => {
     assert.entityCount("Announcement", 1)
 
-    // 0xa16081f360e3847006db660bae1c6d1b2e17ec2a is the default address used in newMockEvent() function
+    // id = txHash-logIndex (default mock tx hash from newMockEvent)
     assert.fieldEquals(
       "Announcement",
       "0xa16081f360e3847006db660bae1c6d1b2e17ec2a-1",
-      "schemeId",
-      "234"
+      "etherealPublicKey",
+      "1234567890"
+    )
+    assert.fieldEquals(
+      "Announcement",
+      "0xa16081f360e3847006db660bae1c6d1b2e17ec2a-1",
+      "metadata",
+      "1234567890"
     )
     assert.fieldEquals(
       "Announcement",
@@ -62,23 +63,8 @@ describe("Describe entity assertions", () => {
     assert.fieldEquals(
       "Announcement",
       "0xa16081f360e3847006db660bae1c6d1b2e17ec2a-1",
-      "caller",
-      "0x0000000000000000000000000000000000000001"
+      "logIndex",
+      "1"
     )
-    assert.fieldEquals(
-      "Announcement",
-      "0xa16081f360e3847006db660bae1c6d1b2e17ec2a-1",
-      "ephemeralPubKey",
-      "1234567890"
-    )
-    assert.fieldEquals(
-      "Announcement",
-      "0xa16081f360e3847006db660bae1c6d1b2e17ec2a-1",
-      "metadata",
-      "1234567890"
-    )
-
-    // More assert options:
-    // https://thegraph.com/docs/en/subgraphs/developing/creating/unit-testing-framework/#asserts
   })
 })

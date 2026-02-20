@@ -1,9 +1,10 @@
 /**
  * useScanner — IndexedDB-backed announcement scanner.
- * - Prefers Subgraph/GraphQL (latest 1000 announcements); falls back to chunked RPC getLogs on failure.
+ * - Primary: single GraphQL fetch to Subgraph (latest 1000 announcements). No getLogs in this path.
+ * - Fallback: if Subgraph fetch fails, uses chunked RPC getLogs (adaptive range, halve on limit).
  * - Loads cached events first; incremental sync from lastScannedBlock when using RPC.
  * - Per-chain sync state; back-fill "Optimizing Vault... [%]" when cache empty (RPC path).
- * - WASM matching offloaded with requestIdleCallback to avoid UI lag.
+ * - WASM matching offloaded with requestIdleCallback; call markSyncComplete when done (indexer path).
  */
 
 import { useState, useEffect, useCallback, useRef } from "react";
@@ -85,6 +86,8 @@ export type UseScannerResult = {
   retrySync: () => Promise<void>;
   /** Re-run scan from lastScannedBlock+1 to latest (incremental) */
   refresh: () => Promise<void>;
+  /** Call when WASM matching has finished (e.g. after indexer path) so progress can move to "done" */
+  markSyncComplete: () => void;
 };
 
 function getStartBlock(chainId: number): bigint {
@@ -334,13 +337,6 @@ export function useScanner(opts: UseScannerOptions): UseScannerResult {
               error: null,
             });
             setIsBackfilling(false);
-            requestAnimationFrame(() => {
-              setProgress((p) => ({
-                ...p,
-                phase: "done",
-                message: "Up to date",
-              }));
-            });
             return;
           }
         } catch {
@@ -465,11 +461,19 @@ export function useScanner(opts: UseScannerOptions): UseScannerResult {
     await runScan(false);
   }, [runScan]);
 
+  const markSyncComplete = useCallback(() => {
+    setProgress((p) => {
+      if (p.phase !== "indexer-fetched") return p;
+      return { ...p, phase: "done", message: "Up to date" };
+    });
+  }, []);
+
   return {
     announcements,
     progress,
     isBackfilling,
     retrySync,
     refresh,
+    markSyncComplete,
   };
 }
