@@ -5,6 +5,12 @@ export function Footer() {
     <footer className="py-4 px-4 text-center text-slate-600 text-xs">
       <nav className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1 mb-2">
         <Link
+          to="/faucet"
+          className="hover:text-slate-400 transition-colors"
+        >
+          Faucet
+        </Link>
+        <Link
           to="/privacy"
           className="hover:text-slate-400 transition-colors"
         >

@@ -51,6 +51,7 @@ async function main() {
 
   const addresses: Record<string, string> = {};
   let nextNonce = await signer.getNonce("latest");
+  let deployedBlockNumber: number | undefined;
 
   for (const contractName of ["StealthMetaAddressRegistry", "StealthAddressAnnouncer"]) {
     const artifact = loadArtifact(contractName);
@@ -60,7 +61,12 @@ async function main() {
       signer
     );
     const contract = await factory.deploy({ nonce: nextNonce });
+    const deployTx = contract.deploymentTransaction();
     await contract.waitForDeployment();
+    if (contractName === "StealthAddressAnnouncer" && deployTx) {
+      const receipt = await deployTx.getTransactionReceipt();
+      if (receipt?.blockNumber != null) deployedBlockNumber = receipt.blockNumber;
+    }
     nextNonce += 1;
     const address = await contract.getAddress();
     addresses[contractName] = address;
@@ -110,6 +116,14 @@ export type DeployedAddresses = typeof deployedAddresses;
   );
   console.log("Wrote frontend/src/contracts/deployedAddresses.ts");
 
+  // Use deployment block for scanner (never scan before announcer existed)
+  if (deployedBlockNumber == null) {
+    deployedBlockNumber = await provider.getBlockNumber();
+    console.log("Deployed block from current block:", deployedBlockNumber);
+  } else {
+    console.log("Deployed block from Announcer tx:", deployedBlockNumber);
+  }
+
   // Write deployed-addresses.json for MULTICHAIN_CONFIG (contract-config.ts)
   const deployedJson = {
     chainId,
@@ -119,13 +133,14 @@ export type DeployedAddresses = typeof deployedAddresses;
       USDC: (addresses as Record<string, string>).USDC ?? "0x0000000000000000000000000000000000000000",
       USDT: (addresses as Record<string, string>).USDT ?? "0x0000000000000000000000000000000000000000",
     },
+    deployedBlock: deployedBlockNumber,
   };
   fs.writeFileSync(
     path.join(FRONTEND_CONTRACTS, "deployed-addresses.json"),
     JSON.stringify(deployedJson, null, 2),
     "utf-8"
   );
-  console.log("Wrote frontend/src/contracts/deployed-addresses.json");
+  console.log("Wrote frontend/src/contracts/deployed-addresses.json (with deployedBlock)");
 
   // Copy ABIs (only the ABI array as JSON for smaller files)
   for (const contractName of ["StealthMetaAddressRegistry", "StealthAddressAnnouncer", "MockERC20"]) {

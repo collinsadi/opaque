@@ -1,9 +1,11 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { createPublicClient, http, formatEther, hexToBytes, getAddress, isAddress } from "viem";
-import { getChain } from "../lib/chain";
+import { getChain, getRpcUrl } from "../lib/chain";
 import { getConfigForChain } from "../contracts/contract-config";
 import { STEALTH_ANNOUNCER_ABI } from "../lib/contracts";
 import { useOpaqueWasm } from "../hooks/useOpaqueWasm";
+import { useScanner } from "../hooks/useScanner";
+import type { CachedAnnouncement } from "../lib/opaqueCache";
 import { useKeys } from "../context/KeysContext";
 import { useWallet } from "../hooks/useWallet";
 import { executeStealthWithdrawal } from "../lib/stealthLifecycle";
@@ -14,6 +16,7 @@ import { ClaimModal } from "./ClaimModal";
 import { useProtocolLog } from "../context/ProtocolLogContext";
 import { useTxHistoryStore } from "../store/txHistoryStore";
 import { useGhostAddressStore } from "../store/ghostAddressStore";
+import { useVaultStore } from "../store/vaultStore";
 import { secp256k1 } from "@noble/curves/secp256k1";
 import { getTokensForChain, ERC20_BALANCE_ABI } from "../lib/tokens";
 import type { TokenInfo } from "../lib/tokens";
@@ -38,14 +41,6 @@ const ANNOUNCEMENT_EVENT = STEALTH_ANNOUNCER_ABI.find(
 );
 if (!ANNOUNCEMENT_EVENT) throw new Error("Announcement event not found in STEALTH_ANNOUNCER_ABI");
 
-type FetchFoundTxsOpts = {
-  publicClient: ReturnType<typeof createPublicClient>;
-  announcerAddress: `0x${string}`;
-  wasm: OpaqueWasmModule | null;
-  getMasterKeys: (() => MasterKeys) | null;
-  chainId: number;
-};
-
 function viewTagFromMetadata(metadata: string | undefined): number {
   if (!metadata || metadata.length < 2) return 0;
   return parseInt(metadata.slice(2, 4), 16);
@@ -56,37 +51,36 @@ function toHexBytes(hex: string): Uint8Array {
   return hexToBytes(normalized as `0x${string}`);
 }
 
-async function fetchFoundTxs(opts: FetchFoundTxsOpts): Promise<FoundTx[]> {
-  const { publicClient, announcerAddress, wasm, getMasterKeys } = opts;
-  console.log("📥 [Opaque] PrivateBalance: fetchFoundTxs (getLogs)…");
-
-  const rawLogs = await publicClient.getLogs({
-    address: announcerAddress,
-    event: ANNOUNCEMENT_EVENT,
-    fromBlock: 0n,
-    toBlock: "latest",
-  });
-
-  console.log("📥 [Opaque] PrivateBalance: getLogs raw result", {
-    count: rawLogs.length,
-    logs: rawLogs,
-  });
-
-  type LogWithArgs = (typeof rawLogs)[number] & {
-    args?: { stealthAddress?: string; ephemeralPubKey?: string; metadata?: string };
+function cachedToLogWithArgs(c: CachedAnnouncement): LogWithArgs {
+  return {
+    args: c.args,
+    transactionHash: c.transactionHash,
+    logIndex: c.logIndex,
+    blockNumber: BigInt(c.blockNumber),
   };
-  type LogRow = {
-    id: string;
-    stealthAddress: string;
-    ephemeralPubKeyHex: string | undefined;
-    viewTag: number;
-    blockNumber: number;
-    txHash: string;
-  };
-  const rows: LogRow[] = rawLogs.map((log: LogWithArgs, i) => {
+}
+
+type LogWithArgs = { args?: { stealthAddress?: string; ephemeralPubKey?: string; metadata?: string }; transactionHash?: string | null; logIndex?: number | null; blockNumber?: bigint | null };
+type LogRow = {
+  id: string;
+  stealthAddress: string;
+  ephemeralPubKeyHex: string | undefined;
+  viewTag: number;
+  blockNumber: number;
+  txHash: string;
+};
+
+async function processRawLogsToFoundTxs(
+  publicClient: ReturnType<typeof createPublicClient>,
+  rawLogs: LogWithArgs[],
+  wasm: OpaqueWasmModule | null,
+  getMasterKeys: (() => MasterKeys) | null,
+  chainId: number
+): Promise<FoundTx[]> {
+  const rows: LogRow[] = rawLogs.map((log, i) => {
     const args = log.args;
     return {
-      id: `${log.transactionHash}-${log.logIndex ?? i}`,
+      id: `${log.transactionHash ?? ""}-${log.logIndex ?? i}`,
       stealthAddress: args?.stealthAddress ?? "",
       ephemeralPubKeyHex: typeof args?.ephemeralPubKey === "string" ? args.ephemeralPubKey : undefined,
       viewTag: viewTagFromMetadata(typeof args?.metadata === "string" ? args.metadata : undefined),
@@ -150,7 +144,7 @@ async function fetchFoundTxs(opts: FetchFoundTxsOpts): Promise<FoundTx[]> {
     matchedAddresses.map((addr) => publicClient.getBalance({ address: addr }))
   );
 
-  const { tokens } = getTokensForChain(opts.chainId);
+  const { tokens } = getTokensForChain(chainId);
   const found: FoundTx[] = matched.map((row, i) => {
     const balance = balances[i] ?? 0n;
     let privateKey: string | undefined;
@@ -190,7 +184,7 @@ async function fetchFoundTxs(opts: FetchFoundTxsOpts): Promise<FoundTx[]> {
     for (const t of tokens) {
       if (!t.address || t.address === "0x0000000000000000000000000000000000000000") continue;
       try {
-        const raw = await opts.publicClient.readContract({
+        const raw = await publicClient.readContract({
           address: t.address,
           abi: ERC20_BALANCE_ABI as readonly unknown[],
           functionName: "balanceOf",
@@ -214,41 +208,10 @@ async function fetchFoundTxs(opts: FetchFoundTxsOpts): Promise<FoundTx[]> {
   return found;
 }
 
-async function fetchScanningStatus(chainId: number): Promise<{
-  scanning: boolean;
-  progressPercent: number;
-  lastBlock: number;
-  message?: string;
-}> {
-  console.log("📥 [Opaque] PrivateBalance: fetchScanningStatus…");
-  const chain = getChain(chainId);
-  const rpcUrl = chain.rpcUrls?.default?.http?.[0];
-  if (!rpcUrl) {
-    return { scanning: false, progressPercent: 0, lastBlock: 0, message: "No RPC URL" };
-  }
-  const publicClient = createPublicClient({
-    chain,
-    transport: http(rpcUrl),
-  });
-  const lastBlock = await publicClient.getBlockNumber();
-  const status = {
-    scanning: true,
-    progressPercent: 100,
-    lastBlock: Number(lastBlock),
-    message: "Scanning announcements…",
-  };
-  console.log("📥 [Opaque] PrivateBalance: scanning status", status);
-  return status;
-}
-
 export type PortfolioEntry = { tx: FoundTx; balanceRaw: bigint };
 
 export function PrivateBalanceView() {
   const [found, setFound] = useState<FoundTx[]>([]);
-  const [scanning, setScanning] = useState(true);
-  const [progressPercent, setProgressPercent] = useState(0);
-  const [lastBlock, setLastBlock] = useState<number>(0);
-  const [message, setMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [claimingId, setClaimingId] = useState<string | null>(null);
   const [claimError, setClaimError] = useState<string | null>(null);
@@ -259,6 +222,8 @@ export function PrivateBalanceView() {
   const [claimAsset, setClaimAsset] = useState<TokenInfo | null>(null);
   const [ghostTxs, setGhostTxs] = useState<FoundTx[]>([]);
   const [selectedAsset, setSelectedAsset] = useState<TokenInfo | null>(null);
+  const [syncingPaused, setSyncingPaused] = useState(false);
+  const [syncError, setSyncError] = useState<string | null>(null);
   const { wasm, isReady: wasmReady } = useOpaqueWasm();
   const keysContext = useKeys();
   const { address: mainWalletAddress, chainId } = useWallet();
@@ -267,6 +232,19 @@ export function PrivateBalanceView() {
   const pushTx = useTxHistoryStore((s) => s.push);
   const chain = chainId != null ? getChain(chainId) : null;
   const removeGhost = useGhostAddressStore((s) => s.remove);
+
+  const rpcUrl = chain ? getRpcUrl(chain) : undefined;
+  const publicClient = useMemo(() => {
+    if (!chain || !rpcUrl) return null;
+    return createPublicClient({ chain, transport: http(rpcUrl) });
+  }, [chain, rpcUrl]);
+
+  const scanner = useScanner({
+    chainId,
+    publicClient,
+    announcerAddress: currentConfig?.announcer ?? null,
+    enabled: Boolean(wasmReady && chainId && currentConfig),
+  });
 
   const { native, tokens } =
     chainId != null ? getTokensForChain(chainId) : { native: { symbol: "ETH", name: "Ether", decimals: 18, address: null }, tokens: [] as TokenInfo[] };
@@ -317,7 +295,7 @@ export function PrivateBalanceView() {
         setClaimError("Invalid destination address.");
         return;
       }
-      const rpcUrl = chain.rpcUrls?.default?.http?.[0];
+      const rpcUrl = getRpcUrl(chain);
       if (!rpcUrl) {
         setClaimError("No RPC URL configured.");
         return;
@@ -438,111 +416,128 @@ export function PrivateBalanceView() {
     [chainId, chain, pushTx, removeGhost]
   );
 
+  const handleRetrySync = useCallback(async () => {
+    if (chainId == null) return;
+    useVaultStore.getState().setLastSyncedBlock(null);
+    setSyncingPaused(false);
+    setSyncError(null);
+    await scanner.retrySync();
+  }, [chainId, scanner]);
+
+  // Derive FoundTx from scanner cache + WASM matching (in idle to avoid UI lag)
   useEffect(() => {
-    if (!wasmReady || wasm === null || chainId == null || !currentConfig || !chain) {
-      if (chainId == null || !currentConfig) setLoading(false);
+    if (!wasmReady || wasm === null || chainId == null || !publicClient) {
+      if (chainId == null) setLoading(false);
+      return;
+    }
+    if (scanner.announcements.length === 0) {
+      if (scanner.progress.phase === "done") {
+        setFound([]);
+        setLoading(false);
+      }
       return;
     }
 
-    let cancelled = false;
-    const rpcUrl = chain.rpcUrls?.default?.http?.[0];
-    if (!rpcUrl) {
-      setLoading(false);
-      return;
-    }
-    const publicClient = createPublicClient({
-      chain,
-      transport: http(rpcUrl),
-    });
+    setLoading(true);
     const getMasterKeys = keysContext.isSetup ? keysContext.getMasterKeys : null;
-    const announcerAddress = currentConfig.announcer as `0x${string}`;
+    const runMatch = () => {
+      const rawLogs = scanner.announcements.map(cachedToLogWithArgs);
+      processRawLogsToFoundTxs(publicClient, rawLogs, wasm, getMasterKeys, chainId)
+        .then((txs) => {
+          setFound((prev) => {
+            const prevIds = new Set(prev.map((t) => t.id));
+            const newIds = txs.filter((t) => !prevIds.has(t.id)).map((t) => t.id);
+            if (newIds.length > 0) setNewlyDetectedIds((old) => [...old, ...newIds]);
+            return txs;
+          });
+          logPush("wasm", `Matched ${txs.length} owned announcement(s) from cache`);
+        })
+        .catch((err) => console.warn("📥 [Opaque] Match error", err))
+        .finally(() => setLoading(false));
+    };
 
-    logPush("blockchain", "Fetching announcement logs (getLogs)…");
-    console.log("📥 [Opaque] PrivateBalance: loading data…");
+    if (typeof requestIdleCallback !== "undefined") {
+      requestIdleCallback(runMatch, { timeout: 500 });
+    } else {
+      setTimeout(runMatch, 0);
+    }
+  }, [scanner.announcements, scanner.progress.phase, wasmReady, wasm, chainId, publicClient, keysContext.isSetup]);
+
+  // Ghost addresses (manual entries) + sync progress/error from scanner
+  useEffect(() => {
+    if (scanner.progress.phase === "error" && scanner.progress.error) {
+      setSyncingPaused(true);
+      setSyncError(scanner.progress.error);
+    }
+  }, [scanner.progress.phase, scanner.progress.error]);
+
+  useEffect(() => {
+    if (chainId == null || !publicClient || !wasm || !keysContext.isSetup) return;
+    const getMasterKeys = keysContext.getMasterKeys;
+    const ghostEntries = useGhostAddressStore.getState().getForChain(chainId);
+    if (ghostEntries.length === 0) {
+      setGhostTxs([]);
+      return;
+    }
+    let cancelled = false;
     (async () => {
-      setLoading(true);
+      let masterKeys: MasterKeys | null = null;
       try {
-        const [txs, status] = await Promise.all([
-          fetchFoundTxs({ publicClient, announcerAddress, wasm, getMasterKeys, chainId }),
-          fetchScanningStatus(chainId),
-        ]);
+        masterKeys = getMasterKeys();
+      } catch {
+        setGhostTxs([]);
+        return;
+      }
+      const ghostFound: FoundTx[] = [];
+      for (const g of ghostEntries) {
         if (cancelled) return;
-        setLastBlock(status.lastBlock);
-        setFound((prev) => {
-          const prevIds = new Set(prev.map((t) => t.id));
-          const newIds = txs.filter((t) => !prevIds.has(t.id)).map((t) => t.id);
-          if (newIds.length > 0) setNewlyDetectedIds((old) => [...old, ...newIds]);
-          return txs;
-        });
-        setScanning(status.scanning);
-        setProgressPercent(status.progressPercent);
-        setMessage(status.message ?? null);
-        logPush("wasm", `Scan complete: ${txs.length} owned announcement(s), block ${status.lastBlock}`);
-
-        const ghostEntries = useGhostAddressStore.getState().getForChain(chainId);
-        let ghostFound: FoundTx[] = [];
-        if (wasm && getMasterKeys && ghostEntries.length > 0) {
-          let masterKeys: MasterKeys | null = null;
+        const balance = await publicClient.getBalance({ address: g.stealthAddress });
+        if (balance === 0n) continue;
+        const ephemeralPubKey = secp256k1.getPublicKey(toHexBytes(g.ephemeralPrivKeyHex), true);
+        const stealthPrivKeyBytes = wasm.reconstruct_signing_key_wasm(
+          masterKeys!.spendPrivKey,
+          masterKeys!.viewPrivKey,
+          ephemeralPubKey
+        );
+        const privateKey =
+          "0x" +
+          Array.from(stealthPrivKeyBytes)
+            .map((b) => b.toString(16).padStart(2, "0"))
+            .join("");
+        const ghostTx: FoundTx = {
+          id: `ghost-${g.stealthAddress}`,
+          address: g.stealthAddress,
+          balance,
+          tokenBalances: {},
+          privateKey,
+          txHash: "",
+          blockNumber: 0,
+          isSpent: false,
+        };
+        const { tokens: ghostTokens } = getTokensForChain(chainId);
+        for (const t of ghostTokens) {
+          if (!t.address || t.address === "0x0000000000000000000000000000000000000000") continue;
           try {
-            masterKeys = getMasterKeys();
+            const raw = await publicClient.readContract({
+              address: t.address,
+              abi: ERC20_BALANCE_ABI as readonly unknown[],
+              functionName: "balanceOf",
+              args: [g.stealthAddress as `0x${string}`],
+            });
+            const balance = typeof raw === "bigint" ? raw : BigInt(String(raw));
+            if (balance > 0n) ghostTx.tokenBalances[t.address] = balance;
           } catch {
-            // keys not available
-          }
-          if (masterKeys) {
-            for (const g of ghostEntries) {
-              const balance = await publicClient.getBalance({ address: g.stealthAddress });
-              if (balance === 0n) continue;
-              const ephemeralPubKey = secp256k1.getPublicKey(toHexBytes(g.ephemeralPrivKeyHex), true);
-              const stealthPrivKeyBytes = wasm.reconstruct_signing_key_wasm(
-                masterKeys.spendPrivKey,
-                masterKeys.viewPrivKey,
-                ephemeralPubKey
-              );
-              const privateKey =
-                "0x" +
-                Array.from(stealthPrivKeyBytes)
-                  .map((b) => b.toString(16).padStart(2, "0"))
-                  .join("");
-              const ghostTx: FoundTx = {
-                id: `ghost-${g.stealthAddress}`,
-                address: g.stealthAddress,
-                balance,
-                tokenBalances: {},
-                privateKey,
-                txHash: "",
-                blockNumber: 0,
-                isSpent: false,
-              };
-              const { tokens: ghostTokens } = getTokensForChain(chainId);
-              for (const t of ghostTokens) {
-                if (!t.address || t.address === "0x0000000000000000000000000000000000000000") continue;
-                try {
-                  const raw = await publicClient.readContract({
-                    address: t.address,
-                    abi: ERC20_BALANCE_ABI as readonly unknown[],
-                    functionName: "balanceOf",
-                    args: [g.stealthAddress as `0x${string}`],
-                  });
-                  const balance = typeof raw === "bigint" ? raw : BigInt(String(raw));
-                  if (balance > 0n) ghostTx.tokenBalances[t.address] = balance;
-                } catch {
-                  /* ignore */
-                }
-              }
-              ghostFound.push(ghostTx);
-            }
+            /* ignore */
           }
         }
-        if (!cancelled) setGhostTxs(ghostFound);
-        console.log("📥 [Opaque] PrivateBalance: loaded ✅", { txsCount: txs.length, ghostCount: ghostFound.length, scanning: status.scanning });
-      } finally {
-        if (!cancelled) setLoading(false);
+        ghostFound.push(ghostTx);
       }
+      if (!cancelled) setGhostTxs(ghostFound);
     })();
     return () => {
       cancelled = true;
     };
-  }, [wasmReady, wasm, keysContext.isSetup, chainId, currentConfig, chain]);
+  }, [chainId, publicClient, wasm, keysContext.isSetup]);
 
   useEffect(() => {
     if (newlyDetectedIds.length === 0) return;
@@ -561,20 +556,38 @@ export function PrivateBalanceView() {
           Total assets (ETH, USDC, USDT) across your stealth addresses. Click an asset to see addresses and withdraw.
         </p>
 
-        {/* Scanning status */}
+        {/* Scanning status (IndexedDB cache + adaptive RPC) */}
         <div
           className={`p-4 rounded-lg bg-neutral-900 border border-border ${
-            scanning ? "scanner-pulse" : ""
-          }`}
+            scanner.progress.phase === "syncing" ||
+            scanner.progress.phase === "backfilling" ||
+            scanner.progress.phase === "indexer-fetch"
+              ? "scanner-pulse"
+              : ""
+          } ${syncingPaused ? "border-amber-500/40" : ""}`}
         >
           <div className="flex items-center justify-between gap-2 mb-2">
             <span className="text-sm text-neutral-400 font-mono">
-              {scanning ? "Scanning" : "Idle"}
+              {syncingPaused
+                ? "Syncing Paused"
+                : scanner.progress.phase === "indexer-fetch"
+                  ? "Fetching from indexer…"
+                  : scanner.progress.phase === "indexer-fetched"
+                    ? "Data Fetched from Indexer"
+                    : scanner.progress.phase === "backfilling"
+                      ? "Optimizing Vault…"
+                      : scanner.progress.phase === "syncing" || scanner.progress.phase === "loading-cache"
+                        ? "Scanning"
+                        : scanner.progress.phase === "done"
+                          ? "Idle"
+                          : scanner.progress.phase === "error"
+                            ? "Error"
+                            : "Idle"}
             </span>
             <span className="text-neutral-300 text-sm font-mono">
-              {lastBlock > 0
-                ? `Block ${lastBlock.toLocaleString()}`
-                : scanning
+              {scanner.progress.currentBlock > 0n
+                ? `Block ${Number(scanner.progress.currentBlock).toLocaleString()}`
+                : scanner.progress.phase === "syncing" || scanner.progress.phase === "backfilling"
                   ? "…"
                   : "—"}
             </span>
@@ -582,15 +595,31 @@ export function PrivateBalanceView() {
           <div className="h-1 rounded-full bg-neutral-800 overflow-hidden">
             <div
               className="h-full bg-neutral-500 rounded-full transition-all duration-500"
-              style={{ width: `${progressPercent}%` }}
+              style={{ width: `${scanner.progress.percent}%` }}
             />
           </div>
-          {(message || (lastBlock > 0 && scanning)) && (
+          {(scanner.progress.message || scanner.isBackfilling) && !syncingPaused && (
             <p className="text-neutral-600 text-xs mt-2 font-mono">
-              {scanning && lastBlock > 0
-                ? `Scanning block 0 … ${lastBlock.toLocaleString()}`
-                : message ?? ""}
+              {scanner.progress.phase === "indexer-fetched"
+                ? "Data Fetched from Indexer"
+                : scanner.isBackfilling
+                  ? `Optimizing Vault… [${scanner.progress.percent}%]`
+                  : scanner.progress.message}
             </p>
+          )}
+          {syncingPaused && (
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <p className="text-amber-500/90 text-xs font-mono flex-1 min-w-0 truncate" title={syncError ?? undefined}>
+                {syncError ?? "RPC error"}
+              </p>
+              <button
+                type="button"
+                onClick={handleRetrySync}
+                className="px-2 py-1 text-xs font-medium rounded-md bg-amber-500/20 text-amber-400 hover:bg-amber-500/30 border border-amber-500/40"
+              >
+                Retry Sync
+              </button>
+            </div>
           )}
         </div>
       </div>
@@ -609,7 +638,7 @@ export function PrivateBalanceView() {
         </div>
       ) : loading ? (
         <div className="card max-w-md">
-          <p className="text-neutral-600 text-sm">Loading…</p>
+          <p className="text-neutral-600 text-sm">Deciphering Payments…</p>
         </div>
       ) : portfolio.length === 0 || portfolio.every((p) => p.totalRaw === 0n) ? (
         <div className="card max-w-md">

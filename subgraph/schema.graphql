@@ -1,0 +1,14 @@
+# Announcement entity: raw hex data needed for stealth derivation.
+# id = txHash-logIndex for uniqueness.
+type Announcement @entity {
+  id: ID!
+  etherealPublicKey: Bytes!
+  viewTag: Int!
+  metadata: Bytes!
+  blockNumber: Int!
+  timestamp: BigInt!
+  # Needed to build cache args for frontend (stealthAddress from event).
+  stealthAddress: Bytes!
+  logIndex: Int!
+  transactionHash: Bytes!
+}

@@ -60,6 +60,12 @@ function DesktopNav({
           >
             Opaque
           </Link>
+          <Link
+            to="/faucet"
+            className="text-sm text-neutral-500 hover:text-neutral-300 transition-colors"
+          >
+            Faucet
+          </Link>
           {navItems.length > 0 && (
             <nav className="flex items-center gap-1">
               {navItems.map(({ id, label }) => (

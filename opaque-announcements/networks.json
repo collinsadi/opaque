@@ -1,0 +1,8 @@
+{
+  "sepolia": {
+    "StealthAddressAnnouncer": {
+      "address": "0x840f72249A8bF6F10b0eB64412E315efBD730865",
+      "startBlock": 10298567
+    }
+  }
+}

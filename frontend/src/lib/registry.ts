@@ -4,7 +4,7 @@
  */
 
 import { createPublicClient, http, getAddress, type Address, type Hex } from "viem";
-import { getChain } from "./chain";
+import { getChain, getRpcUrl } from "./chain";
 import { SCHEME_ID_SECP256K1 } from "./contracts";
 import { getConfigForChain } from "../contracts/contract-config";
 
@@ -46,7 +46,7 @@ export async function resolveMetaAddress(
   const config = getConfigForChain(chainId);
   if (!config) return null;
   const chain = getChain(chainId);
-  const rpcUrl = chain.rpcUrls?.default?.http?.[0];
+  const rpcUrl = getRpcUrl(chain);
   if (!rpcUrl) return null;
   const client = createPublicClient({
     chain,

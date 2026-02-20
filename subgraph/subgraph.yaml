@@ -1,0 +1,24 @@
+specVersion: 1.0.0
+schema:
+  file: ./schema.graphql
+dataSources:
+  - kind: ethereum
+    name: StealthAddressAnnouncer
+    network: sepolia
+    source:
+      address: "0x840f72249A8bF6F10b0eB64412E315efBD730865"
+      abi: StealthAddressAnnouncer
+      startBlock: 5500000
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      file: ./src/mapping.ts
+      entities:
+        - Announcement
+      abis:
+        - name: StealthAddressAnnouncer
+          file: ./abis/StealthAddressAnnouncer.json
+      eventHandlers:
+        - event: Announcement(indexed uint256,indexed address,indexed address,bytes,bytes)
+          handler: handleAnnouncement

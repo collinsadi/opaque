@@ -15,7 +15,7 @@ import {
   type Hash,
 } from "viem";
 import { motion, AnimatePresence } from "framer-motion";
-import { getChain } from "../lib/chain";
+import { getChain, getRpcUrl } from "../lib/chain";
 import { useKeys } from "../context/KeysContext";
 import { useWallet } from "../hooks/useWallet";
 import {
@@ -103,9 +103,15 @@ export function RegistrationWizard({ onComplete }: RegistrationWizardProps) {
       });
       setTxHash(hash);
       setRegisterPhase("mining");
+      const rpcUrl = getRpcUrl(chain);
+      if (!rpcUrl) {
+        setError("No RPC URL configured");
+        setRegisterPhase("idle");
+        return;
+      }
       const publicClient = createPublicClient({
         chain,
-        transport: http(chain.rpcUrls?.default?.http?.[0]),
+        transport: http(rpcUrl),
       });
       await publicClient.waitForTransactionReceipt({ hash });
       setRegisterPhase("idle");

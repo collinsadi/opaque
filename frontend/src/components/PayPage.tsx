@@ -19,7 +19,7 @@ import {
   type Hex,
   type EIP1193Provider,
 } from "viem";
-import { getChain } from "../lib/chain";
+import { getChain, getRpcUrl } from "../lib/chain";
 import { useWallet } from "../hooks/useWallet";
 import { computeStealthAddressAndViewTag } from "../lib/stealth";
 import { resolveMetaAddress } from "../lib/registry";
@@ -147,7 +147,7 @@ export function PayPage() {
       setActiveBalance(null);
       return;
     }
-    const rpcUrl = chain.rpcUrls?.default?.http?.[0];
+    const rpcUrl = getRpcUrl(chain);
     if (!rpcUrl) {
       setActiveBalance(null);
       return;
@@ -184,7 +184,7 @@ export function PayPage() {
       setEthGasReserve(null);
       return;
     }
-    const rpcUrl = chain.rpcUrls?.default?.http?.[0];
+    const rpcUrl = getRpcUrl(chain);
     if (!rpcUrl) {
       setEthGasReserve(null);
       return;

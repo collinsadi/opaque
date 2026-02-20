@@ -22,6 +22,7 @@ import {
 import { privateKeyToAccount } from "viem/accounts";
 import { useVaultStore } from "../store/vaultStore";
 import { getConfigForChain } from "../contracts/contract-config";
+import { getRpcUrl } from "./chain";
 import { STEALTH_ANNOUNCER_ABI, SCHEME_ID_SECP256K1 } from "./contracts";
 
 // -----------------------------------------------------------------------------
@@ -81,7 +82,12 @@ export type MasterKeys = {
 // StealthScanner
 // -----------------------------------------------------------------------------
 
-const CHUNK_SIZE = 2000;
+const CHUNK_SIZE = 1000;
+const RPC_DELAY_MS = 200;
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 export class StealthScanner {
   private readonly publicClient: PublicClient;
@@ -89,6 +95,7 @@ export class StealthScanner {
   private readonly chain: Chain;
   private readonly wasm: StealthLifecycleWasm;
   private readonly getKeys: () => MasterKeys;
+  private readonly deployedBlock: bigint;
   private unsubscribeWatch: (() => void) | null = null;
   private progress: ScanningProgress = {
     status: "idle",
@@ -115,7 +122,9 @@ export class StealthScanner {
     this.chain = opts.chain;
     this.wasm = opts.wasm;
     this.getKeys = opts.getKeys;
-    console.log("👁️ [Opaque] StealthScanner created", { announcer: this.announcerAddress, chainId: this.chain.id });
+    const config = getConfigForChain(opts.chain.id);
+    this.deployedBlock = BigInt(config?.deployedBlock ?? 0);
+    console.log("👁️ [Opaque] StealthScanner created", { announcer: this.announcerAddress, chainId: this.chain.id, deployedBlock: String(this.deployedBlock) });
   }
 
   getChain(): Chain {
@@ -136,14 +145,17 @@ export class StealthScanner {
 
   /**
    * Historical sync: fetch Announcement logs in chunks to avoid RPC rate limits.
-   * fromBlock/toBlock optional; if omitted uses lastSyncedBlock -> current, or 0 -> current.
+   * Never scans before deployedBlock. Uses lastSyncedBlock + 1 when available.
+   * fromBlock/toBlock optional; if omitted uses lastSyncedBlock + 1 -> current, or deployedBlock -> current.
    */
   async updateVault(fromBlock?: bigint, toBlock?: bigint): Promise<void> {
     const to = toBlock ?? (await this.publicClient.getBlockNumber());
     const lastSynced = useVaultStore.getState().lastSyncedBlock;
-    const from = fromBlock ?? (lastSynced !== null ? lastSynced + 1n : 0n);
-    console.log("👁️ [Opaque] updateVault", { from: String(from), to: String(to), lastSynced: lastSynced != null ? String(lastSynced) : null });
-    if (from > to) {
+    const startFrom = lastSynced !== null ? lastSynced + 1n : this.deployedBlock;
+    const from = fromBlock ?? startFrom;
+    const fromBounded = from < this.deployedBlock ? this.deployedBlock : from;
+    console.log("👁️ [Opaque] updateVault", { from: String(fromBounded), to: String(to), lastSynced: lastSynced != null ? String(lastSynced) : null, deployedBlock: String(this.deployedBlock) });
+    if (fromBounded > to) {
       console.log("👁️ [Opaque] Nothing to sync, already up to date");
       this.setProgress({ status: "watching", error: null });
       return;
@@ -151,9 +163,9 @@ export class StealthScanner {
 
     this.setProgress({
       status: "syncing",
-      fromBlock: from,
+      fromBlock: fromBounded,
       toBlock: to,
-      totalBlocks: to - from + 1n,
+      totalBlocks: to - fromBounded + 1n,
       lastProcessedBlock: null,
       error: null,
     });
@@ -161,7 +173,7 @@ export class StealthScanner {
     const keys = this.getKeys();
     const viewPriv = keys.viewPrivKey;
     const spendPub = keys.spendPubKey;
-    let current = from;
+    let current = fromBounded;
     const announcer = this.announcerAddress;
 
     try {
@@ -183,6 +195,7 @@ export class StealthScanner {
         current = end + 1n;
         useVaultStore.getState().setLastSyncedBlock(end);
         this.setProgress({ lastProcessedBlock: end });
+        await delay(RPC_DELAY_MS);
       }
 
       console.log("👁️ [Opaque] Historical sync done ✅");
@@ -367,7 +380,7 @@ export async function withdrawStealthFunds(
 
   const account = getStealthWallet(stealthAddress, wasm, masterKeys);
   const chain = publicClient.chain;
-  const rpcUrl = chain?.rpcUrls?.default?.http?.[0];
+  const rpcUrl = chain ? getRpcUrl(chain) : undefined;
   if (!rpcUrl) {
     throw new Error("Cannot send transaction: no RPC URL on public client chain");
   }
@@ -379,6 +392,7 @@ export async function withdrawStealthFunds(
 
   const hash = await walletClient.sendTransaction({
     account,
+    chain: chain ?? undefined,
     to: destinationAddress,
     value: balance,
     gas: opts?.gas,
@@ -434,7 +448,7 @@ export async function executeStealthWithdrawal(
   const account = privateKeyToAccount(normalizedKey);
 
   const chain = publicClient.chain;
-  const rpcUrl = chain?.rpcUrls?.default?.http?.[0];
+  const rpcUrl = chain ? getRpcUrl(chain) : undefined;
   if (!rpcUrl) {
     throw new Error("Cannot send transaction: no RPC URL on public client chain");
   }
@@ -499,6 +513,7 @@ export async function executeStealthWithdrawal(
 
   const txRequest = {
     account,
+    chain: publicClient.chain ?? undefined,
     to: destinationAddress,
     value: sendableAmount,
     data: "0x" as const,
@@ -551,7 +566,7 @@ export async function claimStealthFunds(
   const account = privateKeyToAccount(normalizedKey);
 
   const chain = publicClient.chain;
-  const rpcUrl = chain?.rpcUrls?.default?.http?.[0];
+  const rpcUrl = chain ? getRpcUrl(chain) : undefined;
   if (!rpcUrl) {
     throw new Error("Cannot send transaction: no RPC URL on public client chain");
   }
@@ -577,6 +592,7 @@ export async function claimStealthFunds(
 
   const hash = await walletClient.sendTransaction({
     account,
+    chain: chain ?? undefined,
     to: toAddress,
     value: amount,
     gas: gasEstimate,
@@ -637,7 +653,7 @@ export async function executeTokenWithdrawal(
   const account = privateKeyToAccount(normalizedKey);
 
   const chain = publicClient.chain;
-  const rpcUrl = chain?.rpcUrls?.default?.http?.[0];
+  const rpcUrl = chain ? getRpcUrl(chain) : undefined;
   if (!rpcUrl) throw new Error("Cannot send transaction: no RPC URL on public client chain");
 
   report("CALC", "Reading token balance…");
@@ -703,6 +719,7 @@ export async function executeTokenWithdrawal(
   report("SEND", "Broadcasting token transfer…");
   const hash = await walletClient.sendTransaction({
     account,
+    chain: chain ?? undefined,
     to: tokenAddress,
     value: 0n,
     data,

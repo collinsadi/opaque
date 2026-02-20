@@ -5,7 +5,7 @@
 
 import { createPublicClient, http, getAddress, type Address } from "viem";
 import { normalize } from "viem/ens";
-import { getChain } from "./chain";
+import { getChain, getRpcUrl } from "./chain";
 
 /**
  * Resolve an ENS name (e.g. "alice.opaque.eth") to the controller's Ethereum address.
@@ -16,7 +16,7 @@ export async function resolveEnsToAddress(
   chainId: number
 ): Promise<Address | null> {
   const chain = getChain(chainId);
-  const rpcUrl = chain.rpcUrls?.default?.http?.[0];
+  const rpcUrl = getRpcUrl(chain);
   if (!rpcUrl) return null;
   const client = createPublicClient({
     chain,

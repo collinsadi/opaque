@@ -10,6 +10,7 @@ import { TermsPage } from "./components/TermsPage.tsx";
 import { DisclaimerPage } from "./components/DisclaimerPage.tsx";
 import { PayPage } from "./components/PayPage.tsx";
 import { PaySuccessPage } from "./components/PaySuccessPage.tsx";
+import { FaucetPage } from "./components/FaucetPage.tsx";
 
 console.log("🚀 [Opaque] App bootstrapping…");
 
@@ -55,6 +56,7 @@ createRoot(document.getElementById("root")!).render(
         <Route path="/disclaimer" element={<DisclaimerPage />} />
         <Route path="/pay/success" element={<PaySuccessPage />} />
         <Route path="/pay/:identifier" element={<KeysProvider><PayPage /></KeysProvider>} />
+        <Route path="/faucet" element={<FaucetPage />} />
         <Route path="*" element={<NotFoundPage />} />
       </Routes>
     </BrowserRouter>
