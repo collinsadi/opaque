@@ -23,6 +23,10 @@ import {
 import { STEALTH_ANNOUNCER_ABI } from "../lib/contracts";
 import { getTokensForChain } from "../lib/tokens";
 import { ERC20_BALANCE_ABI } from "../lib/tokens";
+import {
+  getUserFacingSyncMessage,
+  logSyncError,
+} from "../lib/syncErrorUtils";
 import { getStoredGhostEntries } from "../store/ghostAddressStore";
 
 const SUBGRAPH_ANNOUNCEMENTS_LIMIT = 1000;
@@ -468,7 +472,8 @@ export function useScanner(opts: UseScannerOptions): UseScannerResult {
         });
         setIsBackfilling(false);
       } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
+        const msg = getUserFacingSyncMessage(err);
+        logSyncError(err, "Sync failed");
         setProgress((p) => ({
           ...p,
           phase: "error",

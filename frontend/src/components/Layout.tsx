@@ -47,7 +47,7 @@ function DesktopNav({
   }, []);
 
   return (
-    <header className="fixed top-0 left-0 right-0 z-20 border-b border-border bg-black">
+    <header className="shrink-0 border-b border-border bg-black">
       <div className="max-w-5xl mx-auto px-6 h-14 flex items-center justify-between">
         <div className="flex items-center gap-8">
           <Link
@@ -223,7 +223,8 @@ export function Layout({
 }: LayoutProps) {
   return (
     <div className="h-screen flex flex-col bg-black">
-      <div className="hidden md:block">
+      <div className="hidden md:flex flex-col fixed top-0 left-0 right-0 z-20">
+        <TestnetBanner isConnected={isConnected} />
         <DesktopNav
           tab={tab}
           onTabChange={onTabChange}
@@ -235,9 +236,11 @@ export function Layout({
         />
       </div>
 
-      <TestnetBanner isConnected={isConnected} />
+      <div className="md:hidden">
+        <TestnetBanner isConnected={isConnected} />
+      </div>
 
-      <div className="flex-1 min-h-0 overflow-y-auto pt-8 md:pt-14 pb-20 md:pb-52">
+      <div className="flex-1 min-h-0 overflow-y-auto pt-8 md:pt-28 pb-20 md:pb-52">
         <main
           className={`w-full mx-auto px-4 sm:px-6 pt-8 pb-8 flex-1 flex flex-col min-h-0 ${
             tab === "balance" ? "max-w-none" : "max-w-2xl"
