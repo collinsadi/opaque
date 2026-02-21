@@ -137,8 +137,12 @@ async function fetchFromSubgraph(
   subgraphUrl: string,
   chainId: number
 ): Promise<CachedAnnouncement[] | null> {
+  const graphAuth = (import.meta.env.VITE_GRAPH_AUTH as string | undefined)?.trim();
+  const headers: Record<string, string> = {};
+  if (graphAuth) headers["Authorization"] = `Bearer ${graphAuth}`;
+
   const apolloClient = new ApolloClient({
-    link: new HttpLink({ uri: subgraphUrl }),
+    link: new HttpLink({ uri: subgraphUrl, headers }),
     cache: new InMemoryCache(),
   });
   try {
