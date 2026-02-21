@@ -23,6 +23,7 @@ import {
 import { STEALTH_ANNOUNCER_ABI } from "../lib/contracts";
 import { getTokensForChain } from "../lib/tokens";
 import { ERC20_BALANCE_ABI } from "../lib/tokens";
+import { getStoredGhostEntries } from "../store/ghostAddressStore";
 
 const SUBGRAPH_ANNOUNCEMENTS_LIMIT = 1000;
 
@@ -539,10 +540,25 @@ export function useScanner(opts: UseScannerOptions): UseScannerResult {
     });
   }, []);
 
-  // State-polling: check watchlist balances (ETH + ERC20 via multicall), or fallback to ghostAddresses ETH-only
+  // State-polling: check watchlist + ghost addresses + opaque-ghost-addresses (current chain only; skip local when on Sepolia)
   useEffect(() => {
-    const addressesToPoll = watchlistAddresses.length > 0 ? watchlistAddresses : ghostAddresses;
-    if (!publicClient || addressesToPoll.length === 0 || chainId == null) {
+    if (!publicClient || chainId == null) {
+      setGhostBalances({});
+      setGhostTokenBalances({});
+      return;
+    }
+    // Only use stored entries for current chain (ignores 31337 when wallet is on Sepolia)
+    const stored = getStoredGhostEntries().filter((e) => e.chainId === chainId);
+    const storedAddresses = stored.map((e) => e.stealthAddress as `0x${string}`);
+    const combined: `0x${string}`[] = [...watchlistAddresses, ...ghostAddresses, ...storedAddresses];
+    const seen = new Set<string>();
+    const addressesToPoll = combined.filter((addr) => {
+      const key = addr.toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+    if (addressesToPoll.length === 0) {
       setGhostBalances({});
       setGhostTokenBalances({});
       return;
@@ -553,7 +569,7 @@ export function useScanner(opts: UseScannerOptions): UseScannerResult {
         if (watchlistAddresses.length > 0 && chainId != null) {
           const { eth, tokens } = await checkWatchlistBalances(
             publicClient,
-            watchlistAddresses,
+            addressesToPoll,
             chainId
           );
           if (cancelled) return;
@@ -561,11 +577,11 @@ export function useScanner(opts: UseScannerOptions): UseScannerResult {
           setGhostTokenBalances(tokens);
         } else {
           const results = await Promise.all(
-            ghostAddresses.map((addr) => publicClient.getBalance({ address: addr }))
+            addressesToPoll.map((addr) => publicClient.getBalance({ address: addr }))
           );
           if (cancelled) return;
           const next: Record<string, bigint> = {};
-          ghostAddresses.forEach((addr, i) => {
+          addressesToPoll.forEach((addr, i) => {
             next[addr.toLowerCase()] = results[i] ?? 0n;
           });
           setGhostBalances(next);

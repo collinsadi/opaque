@@ -557,14 +557,12 @@ export function PrivateBalanceView() {
     }
   }, [scanner.progress.phase, scanner.progress.error]);
 
-  // Build ghostTxs from watchlist/ghost balances (state-polling). Only include addresses we're currently polling (so archived ones drop out after next poll).
+  // Build ghostTxs from scanner ghostBalances (includes watchlist + ghost store + opaque-ghost-addresses for this chain).
   useEffect(() => {
     if (chainId == null || !wasm) return;
     const { ghostBalances, ghostTokenBalances } = scanner;
     const hasTokenBalances = Object.keys(ghostTokenBalances).length > 0;
-    const polledAddresses = watchlistAddresses.length > 0 ? watchlistAddresses : ghostAddresses;
-    const addressesWithBalance = polledAddresses.filter((addr) => {
-      const key = addr.toLowerCase();
+    const addressesWithBalance = Object.keys(ghostBalances).filter((key) => {
       const eth = ghostBalances[key] ?? 0n;
       const tokens = ghostTokenBalances[key] ?? {};
       const hasTokens = Object.values(tokens).some((b) => b > 0n);
@@ -576,8 +574,8 @@ export function PrivateBalanceView() {
     }
     const getMasterKeys = keysContext.isSetup ? keysContext.getMasterKeys : null;
     const ghostFound: FoundTx[] = [];
-    for (const addr of addressesWithBalance) {
-      const key = addr.toLowerCase();
+    for (const key of addressesWithBalance) {
+      const addr = key as `0x${string}`;
       const balance = ghostBalances[key] ?? 0n;
       const tokenBals = hasTokenBalances ? (ghostTokenBalances[key] ?? {}) : {};
       const g = ghostEntries.find((e) => e.stealthAddress.toLowerCase() === key);
@@ -614,7 +612,7 @@ export function PrivateBalanceView() {
       ghostFound.push(ghostTx);
     }
     setGhostTxs(ghostFound);
-  }, [chainId, wasm, keysContext.isSetup, ghostEntries, watchlistAddresses, scanner.ghostBalances, scanner.ghostTokenBalances]);
+  }, [chainId, wasm, keysContext.isSetup, ghostEntries, scanner.ghostBalances, scanner.ghostTokenBalances]);
 
   useEffect(() => {
     if (newlyDetectedIds.length === 0) return;
@@ -759,7 +757,9 @@ export function PrivateBalanceView() {
                   selectedAsset.address === null
                     ? formatEther(balanceRaw)
                     : (Number(balanceRaw) / 10 ** selectedAsset.decimals).toFixed(selectedAsset.decimals);
-                const isGhostWithoutKey = tx.source === "manual" && !tx.privateKey;
+                const ghostEntry = ghostEntries.find((e) => e.stealthAddress.toLowerCase() === tx.address.toLowerCase());
+                const canReconstructKey = !!(ghostEntry?.ephemeralPrivKeyHex && ghostEntry?.stealthAddress);
+                const isGhostWithoutKey = tx.source === "manual" && !tx.privateKey && !canReconstructKey;
                 if (isGhostWithoutKey) {
                   return (
                     <div
@@ -900,7 +900,12 @@ export function PrivateBalanceView() {
 
 
       {claimModalTx && claimAsset && (
-        (claimModalTx.source === "manual" && !claimModalTx.privateKey) ? (
+        (() => {
+          const entry = ghostEntries.find((e) => e.stealthAddress.toLowerCase() === claimModalTx.address.toLowerCase());
+          const hasKey = !!(entry?.ephemeralPrivKeyHex && entry?.stealthAddress);
+          const showIncorrectlyGenerated = claimModalTx.source === "manual" && !claimModalTx.privateKey && !hasKey;
+          return showIncorrectlyGenerated;
+        })() ? (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60" onClick={() => { setClaimModalTx(null); setClaimAsset(null); setClaimError(null); }}>
             <div className="card max-w-md w-full p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
               <p className="text-amber-500/90 text-sm">This address was generated incorrectly and cannot be spent.</p>
@@ -987,6 +992,10 @@ export function PrivateBalanceView() {
                     return;
                   }
                   const addr = getAddress(trimmed);
+                  const allEntries = useGhostAddressStore.getState().entries;
+                  const storedEntry = allEntries.find(
+                    (e) => e.stealthAddress.toLowerCase() === addr.toLowerCase()
+                  );
                   const existsInGhost = ghostEntries.some(
                     (e) => e.stealthAddress.toLowerCase() === addr.toLowerCase()
                   );
@@ -996,6 +1005,13 @@ export function PrivateBalanceView() {
                   if (existsInGhost || existsInWatchlist) {
                     setManualImportError("Address is already in the tracking list.");
                     return;
+                  }
+                  if (storedEntry?.ephemeralPrivKeyHex) {
+                    useGhostAddressStore.getState().add({
+                      chainId,
+                      stealthAddress: addr,
+                      ephemeralPrivKeyHex: storedEntry.ephemeralPrivKeyHex,
+                    });
                   }
                   watchlistAdd(chainId, addr);
                   setManualImportOpen(false);

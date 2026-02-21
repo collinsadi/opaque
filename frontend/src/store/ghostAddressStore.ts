@@ -16,7 +16,15 @@ export type GhostEntry = {
   createdAt: number;
 };
 
-const STORAGE_KEY = "opaque-ghost-addresses";
+export const GHOST_ADDRESSES_STORAGE_KEY = "opaque-ghost-addresses";
+
+const STORAGE_KEY = GHOST_ADDRESSES_STORAGE_KEY;
+
+/** Read and parse ghost entries from localStorage (for use in scanner without React). */
+export function getStoredGhostEntries(): GhostEntry[] {
+  if (typeof localStorage === "undefined") return [];
+  return parseStored(localStorage.getItem(STORAGE_KEY));
+}
 
 /** Normalize entry so all fields are JSON-safe (explicit strings where needed). */
 function normalizeEntry(entry: Omit<GhostEntry, "createdAt">): GhostEntry {
