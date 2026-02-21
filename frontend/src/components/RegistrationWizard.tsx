@@ -25,6 +25,9 @@ import {
 import { SCHEME_ID_SECP256K1 } from "../lib/contracts";
 import { getConfigForChain } from "../contracts/contract-config";
 
+const SEPOLIA_CHAIN_ID = 11155111;
+const SEPOLIA_HEX = "0xaa36a7";
+
 const SETUP_MESSAGE =
   "Sign this message to derive your Opaque Cash stealth keys. This does not approve any transaction.";
 
@@ -44,8 +47,26 @@ export function RegistrationWizard({ onComplete }: RegistrationWizardProps) {
   const [registerPhase, setRegisterPhase] = useState<RegisterPhase>("idle");
   const [error, setError] = useState<string | null>(null);
   const [, setTxHash] = useState<Hash | null>(null);
+  const [switchingNetwork, setSwitchingNetwork] = useState(false);
 
+  const wrongNetwork = chainId != null && chainId !== SEPOLIA_CHAIN_ID;
   const networkName = chainId != null ? getChain(chainId).name : "this network";
+
+  const handleSwitchToSepolia = async () => {
+    const ethereum = (window as unknown as { ethereum?: { request: (args: unknown) => Promise<unknown> } }).ethereum;
+    if (!ethereum?.request) return;
+    setSwitchingNetwork(true);
+    try {
+      await ethereum.request({
+        method: "wallet_switchEthereumChain",
+        params: [{ chainId: SEPOLIA_HEX }],
+      });
+    } catch (err) {
+      console.warn("[Opaque] Switch network failed", err);
+    } finally {
+      setSwitchingNetwork(false);
+    }
+  };
 
   const handleGenerateKeys = async () => {
     if (!address || !(window as unknown as { ethereum?: EIP1193Provider }).ethereum?.request) {
@@ -216,6 +237,21 @@ export function RegistrationWizard({ onComplete }: RegistrationWizardProps) {
 
             {step === "register" && (
               <div className="space-y-4 mb-0">
+                {wrongNetwork && (
+                  <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 space-y-2">
+                    <p className="text-sm text-amber-200">
+                      Wrong Network: Opaque Registration is only available on Sepolia.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={handleSwitchToSepolia}
+                      disabled={switchingNetwork}
+                      className="w-full py-2 px-3 rounded-lg text-sm font-medium bg-amber-500/20 text-amber-200 border border-amber-500/40 hover:bg-amber-500/30 disabled:opacity-50"
+                    >
+                      {switchingNetwork ? "Switching…" : "Switch to Sepolia"}
+                    </button>
+                  </div>
+                )}
                 <p className="text-sm text-neutral-400">
                   Publish your Stealth Meta-Address on-chain so others can send to you by your ETH
                   address.
@@ -244,7 +280,7 @@ export function RegistrationWizard({ onComplete }: RegistrationWizardProps) {
                   <button
                     type="button"
                     onClick={handleRegister}
-                    disabled={!currentConfig}
+                    disabled={!currentConfig || wrongNetwork}
                     className="w-full py-3 px-4 rounded-lg text-sm font-medium btn-primary disabled:opacity-50 disabled:cursor-not-allowed mt-4"
                   >
                     Register on {networkName}

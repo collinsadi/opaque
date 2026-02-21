@@ -2,14 +2,17 @@
  * Per-chain transaction history (last 50): sent, received, manual ghost discoveries.
  * Stored in localStorage keyed by chainId.
  * Token-aware: each entry includes tokenSymbol, tokenAddress, and formatted amount.
+ * Hydration guard: no setItem until rehydration has completed so we don't overwrite with [] on initial load.
  */
 
 import { create } from "zustand";
-import { persist } from "zustand/middleware";
+import { persist, createJSONStorage } from "zustand/middleware";
 import type { Address } from "viem";
 
 const MAX_ITEMS_PER_CHAIN = 50;
 const STORAGE_KEY = "opaque-tx-history";
+
+const hasRehydratedRef = { current: false };
 
 export type TxHistoryKind = "sent" | "received" | "ghost";
 
@@ -42,6 +45,22 @@ type TxHistoryState = {
   clear: () => void;
 };
 
+const txHistoryStorage = createJSONStorage<TxHistoryState>(() => ({
+  getItem: (name: string): string | null => {
+    if (typeof localStorage === "undefined") return null;
+    return localStorage.getItem(name);
+  },
+  setItem: (name: string, value: string): void => {
+    if (typeof localStorage === "undefined") return;
+    if (!hasRehydratedRef.current) return;
+    localStorage.setItem(name, value);
+  },
+  removeItem: (name: string): void => {
+    if (typeof localStorage === "undefined") return;
+    localStorage.removeItem(name);
+  },
+}));
+
 export const useTxHistoryStore = create<TxHistoryState>()(
   persist(
     (set, get) => ({
@@ -51,6 +70,10 @@ export const useTxHistoryStore = create<TxHistoryState>()(
         set((state) => {
           const chainId = entry.chainId;
           const list = state.byChain[chainId] ?? [];
+          if (entry.txHash) {
+            const existingByTxHash = new Set(list.filter((e) => e.txHash).map((e) => e.txHash!.toLowerCase()));
+            if (existingByTxHash.has(entry.txHash.toLowerCase())) return state;
+          }
           const newEntry: TxHistoryEntry = {
             ...entry,
             tokenSymbol: entry.tokenSymbol ?? "ETH",
@@ -59,7 +82,6 @@ export const useTxHistoryStore = create<TxHistoryState>()(
             id: `tx-${chainId}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
             timestamp: Date.now(),
           };
-          // FIFO: push new to top, keep last 50; pop oldest when length > 50
           const next = [newEntry, ...list];
           const trimmed = next.length > MAX_ITEMS_PER_CHAIN ? next.slice(0, MAX_ITEMS_PER_CHAIN) : next;
           return {
@@ -81,6 +103,12 @@ export const useTxHistoryStore = create<TxHistoryState>()(
 
       clear: () => set({ byChain: {} }),
     }),
-    { name: STORAGE_KEY }
+    {
+      name: STORAGE_KEY,
+      storage: txHistoryStorage,
+      onRehydrateStorage: () => (_state, _err) => {
+        hasRehydratedRef.current = true;
+      },
+    }
   )
 );

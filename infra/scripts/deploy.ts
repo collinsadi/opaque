@@ -42,7 +42,7 @@ function loadArtifact(contractName: string): Artifact {
 async function main() {
   const rpcUrl = process.env.RPC_URL ?? "http://127.0.0.1:8545";
   const provider = new ethers.JsonRpcProvider(rpcUrl);
-  const privateKey = "0xdf57089febbacf7ba0bc227dafbffa9fc08a93fdc68e1e42411a14efcf23656e";
+  const privateKey = process.env.PRIVATE_KEY;
   if (!privateKey) {
     throw new Error("Set PRIVATE_KEY (e.g. from Hardhat node account #0) to run deploy.");
   }

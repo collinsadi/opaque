@@ -123,19 +123,19 @@ export function useGhostAddressPersistence(): void {
   const setEntries = useGhostAddressStore((s) => s.setEntries);
   const hasLoadedFromStorage = useRef(false);
 
-  // Rehydrate from localStorage once on mount
+  // Rehydrate from localStorage once on mount; mark loaded so we don't write during/after initial load until ready
   useEffect(() => {
     if (typeof localStorage === "undefined") return;
     const raw = localStorage.getItem(STORAGE_KEY);
     const stored = parseStored(raw);
     setEntries(stored);
+    hasLoadedFromStorage.current = true;
   }, [setEntries]);
 
-  // Persist whenever entries change; do not overwrite with [] before we've ever written (avoids race on first load)
+  // Persist whenever entries change. Hydration guard: do not write until initial getItem has completed.
   useEffect(() => {
     if (typeof localStorage === "undefined") return;
-    if (entries.length === 0 && !hasLoadedFromStorage.current) return;
+    if (!hasLoadedFromStorage.current) return;
     localStorage.setItem(STORAGE_KEY, JSON.stringify(entries));
-    hasLoadedFromStorage.current = true;
   }, [entries]);
 }
