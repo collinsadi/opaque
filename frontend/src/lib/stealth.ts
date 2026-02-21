@@ -1,6 +1,12 @@
 /**
  * Opaque Cash — Client-side stealth address crypto (EIP-5564 / DKSAP)
- * Uses @noble/curves secp256k1; compatible with Rust scanner.
+ *
+ * Implements the Dual-Key Stealth Address Protocol: senders derive a one-time
+ * stealth address from the recipient's meta-address (viewing + spending public keys);
+ * recipients use their viewing key to detect transfers and spending key to sweep.
+ * Uses @noble/curves secp256k1; compatible with the Rust WASM scanner.
+ *
+ * @see https://eips.ethereum.org/EIPS/eip-5564
  */
 
 import { secp256k1 } from "@noble/curves/secp256k1";
@@ -18,8 +24,14 @@ const DOMAIN = "opaque-cash-v1";
 // -----------------------------------------------------------------------------
 
 /**
- * Derive viewing key (v) and spending key (s) from a signature used as entropy.
- * Uses HKDF to expand the signature bytes into two 32-byte private keys.
+ * Derive viewing key (v) and spending key (s) from a wallet signature used as entropy.
+ *
+ * Uses HKDF-SHA256 to expand the signature into 64 bytes, then splits into two
+ * 32-byte private keys. Domain string is "opaque-cash-v1". The signature is never
+ * sent to a server; derivation is done entirely in the browser.
+ *
+ * @param signatureHex - EIP-191 or similar signature from the user's wallet (hex).
+ * @returns viewingKey and spendingKey as 32-byte Uint8Arrays for EIP-5564 DKSAP.
  */
 export function deriveKeysFromSignature(signatureHex: Hex): {
   viewingKey: Uint8Array;
@@ -39,8 +51,16 @@ export function deriveKeysFromSignature(signatureHex: Hex): {
 }
 
 /**
- * Get viewing public key V and spending public key S from private keys.
- * Stealth meta-address = compressed(V) || compressed(S) per EIP-5564.
+ * Build the stealth meta-address from viewing and spending private keys.
+ *
+ * Meta-address = compressed(V) || compressed(S) (66 bytes total), where V and S
+ * are the public keys for the viewing and spending keys. This is what recipients
+ * share so senders can derive one-time stealth addresses. Per EIP-5564 schemeId 1
+ * (secp256k1).
+ *
+ * @param viewingKey - 32-byte viewing private key (used to compute shared secret with ephemeral key).
+ * @param spendingKey - 32-byte spending private key (used to derive one-time signing key).
+ * @returns V, S as compressed pubkeys and metaAddress as 66-byte concatenation.
  */
 export function keysToStealthMetaAddress(
   viewingKey: Uint8Array,
@@ -55,14 +75,24 @@ export function keysToStealthMetaAddress(
 }
 
 /**
- * Encode stealth meta-address as hex (0x-prefixed).
+ * Encode the 66-byte stealth meta-address as 0x-prefixed hex (132 hex chars).
+ *
+ * @param metaAddress - compressed(V) || compressed(S) per EIP-5564.
+ * @returns Hex string suitable for storage or passing to parseStealthMetaAddress / computeStealthAddressAndViewTag.
  */
 export function stealthMetaAddressToHex(metaAddress: Uint8Array): Hex {
   return ("0x" + bytesToHex(metaAddress)) as Hex;
 }
 
 /**
- * Parse recipient stealth meta-address: first 33 bytes = viewing pubkey, next 33 = spending pubkey.
+ * Parse a recipient stealth meta-address into viewing and spending public keys.
+ *
+ * Format per EIP-5564: first 33 bytes = compressed viewing public key V, next 33 = compressed
+ * spending public key S. Senders use V for ECDH and S for the stealth point (P_stealth = S + S_h).
+ *
+ * @param metaHex - 0x-prefixed hex string (132 hex chars = 66 bytes).
+ * @returns viewPubKey and spendPubKey as 33-byte compressed secp256k1 points.
+ * @throws if length is less than 66 bytes.
  */
 export function parseStealthMetaAddress(metaHex: Hex): {
   viewPubKey: Uint8Array;
@@ -86,8 +116,16 @@ export function parseStealthMetaAddress(metaHex: Hex): {
 // -----------------------------------------------------------------------------
 
 /**
- * Shared secret from sender side: s = r * P_view (ephemeral priv * viewing pub).
- * Encoded as compressed point (33 bytes) then hashed with Keccak-256 per EIP-5564.
+ * ECDH shared secret on the sender side: s = r · V (ephemeral private key × recipient viewing public key).
+ *
+ * The result is the compressed encoding of the curve point (33 bytes). EIP-5564 then hashes
+ * this with Keccak-256 to obtain s_h; the first byte of the hash is the view tag. Both sender
+ * and recipient compute the same s when the recipient uses their viewing key with the
+ * ephemeral public key R.
+ *
+ * @param ephemeralPriv - Sender's ephemeral private key r (32 bytes).
+ * @param viewPubKey - Recipient's compressed viewing public key V (33 bytes).
+ * @returns Compressed shared secret point (33 bytes), to be hashed with Keccak-256.
  */
 function sharedSecretSender(
   ephemeralPriv: Uint8Array,
@@ -101,7 +139,14 @@ function sharedSecretSender(
 }
 
 /**
- * s_h = Keccak256(shared_secret); viewTag = s_h[0].
+ * Hash the shared secret per EIP-5564: s_h = Keccak256(s), view tag = s_h[0].
+ *
+ * The view tag allows the recipient's scanner to filter announcements without performing
+ * full EC math for ~255/256 of them. Only when the tag matches do we derive the stealth
+ * address and compare.
+ *
+ * @param sharedSecret - Compressed ECDH shared secret (33 bytes).
+ * @returns sH (32-byte hash) and viewTag (first byte of sH).
  */
 function hashSharedSecret(sharedSecret: Uint8Array): {
   sH: Uint8Array;
@@ -113,8 +158,17 @@ function hashSharedSecret(sharedSecret: Uint8Array): {
 }
 
 /**
- * Reduce s_h mod n to get scalar; S_h = s_h * G; P_stealth = P_spend + S_h.
- * Address = last 20 bytes of Keccak256(uncompressed(P_stealth)).
+ * Derive the stealth public key and Ethereum address from spending public key and hashed secret.
+ *
+ * DKSAP steps (EIP-5564):
+ * 1. Reduce s_h mod n (curve order) to get a scalar.
+ * 2. S_h = s_h · G (scalar multiplication on the generator).
+ * 3. P_stealth = P_spend + S_h (point addition on secp256k1).
+ * 4. Address = last 20 bytes of Keccak256(uncompressed(P_stealth)), then EIP-55.
+ *
+ * @param spendPubKey - Recipient's compressed spending public key S (33 bytes).
+ * @param sH - 32-byte Keccak256 hash of the shared secret.
+ * @returns The one-time stealth address where the sender will send funds.
  */
 function stealthPointAndAddress(
   spendPubKey: Uint8Array,
@@ -134,8 +188,21 @@ function stealthPointAndAddress(
 }
 
 /**
- * Generate ephemeral keypair (r, R), compute stealth address P and view tag.
- * Returns everything needed to call the Announcer and send funds to P.
+ * Sender-side: compute a one-time stealth address and view tag for a recipient.
+ *
+ * This is the main entry point for sending to a stealth meta-address. It:
+ * 1. Parses the recipient meta-address (V, S).
+ * 2. Generates an ephemeral key pair (r, R).
+ * 3. Computes shared secret s = r · V, then s_h = Keccak256(s), viewTag = s_h[0].
+ * 4. Derives P_stealth = S + (s_h mod n)·G and the Ethereum address.
+ * 5. Returns ephemeral key, stealth address, view tag, and metadata (for the Announcer).
+ *
+ * The recipient can later derive the same address and the one-time private key using
+ * their viewing and spending keys with R (reconstruct_signing_key_wasm in WASM).
+ *
+ * @param recipientMetaAddressHex - Recipient's 66-byte meta-address (compressed(V) || compressed(S)) as hex.
+ * @returns ephemeralPriv, ephemeralPubKey, stealthAddress, viewTag, and metadata (1 byte = view tag).
+ * @see https://eips.ethereum.org/EIPS/eip-5564
  */
 export function computeStealthAddressAndViewTag(
   recipientMetaAddressHex: Hex

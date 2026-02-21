@@ -812,9 +812,21 @@ export async function executeTokenWithdrawal(
 // -----------------------------------------------------------------------------
 
 /**
- * Derive the one-time stealth private key for a ghost address using stored
- * ephemeral private key and the user's root spending key.
- * Formula: p = k + hash(S) where k = spending key, S = shared secret (view_priv * R_ephemeral).
+ * Derive the one-time stealth private key for a Manual Ghost Address so the user can sweep funds.
+ *
+ * DKSAP (EIP-5564): the one-time private key is p_stealth = p_spend + s_h (mod n), where
+ * s_h = Keccak256(shared_secret) and shared_secret = view_priv · R_ephemeral (ECDH). The ghost
+ * entry stores the ephemeral private key (or we could store R and use view key); we pass
+ * the user's spending and viewing keys plus the ephemeral public key to the WASM
+ * reconstruct_signing_key_wasm, which computes the same formula as the Rust scanner.
+ *
+ * Use this key only for the specific stealth address associated with this ghost entry.
+ *
+ * @param ghostEntry - Manual ghost entry containing ephemeralPrivKeyHex (and stealth address for context).
+ * @param masterKeys - User's viewing and spending private keys (from deriveKeysFromSignature).
+ * @param wasm - Loaded WASM module exposing reconstruct_signing_key_wasm(viewPriv, spendPriv, ephemeralPubKey).
+ * @returns The one-time private key as hex, for signing the sweep transaction.
+ * @throws if ghost entry has no ephemeral key or key length is invalid.
  */
 export function deriveStealthPrivateKeyFromGhostEntry(
   ghostEntry: GhostEntry,

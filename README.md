@@ -1,6 +1,8 @@
 # Opaque Cash
 
-**Opaque Cash** is a stealth-address wallet and privacy protocol built on **EIP-5564** (Stealth Addresses) and a **Stealth Meta-Address Registry**. Users receive ETH and ERC-20 tokens at one-time stealth addresses derived from a single meta-address; senders can target recipients by meta-address or by standard Ethereum address (resolved via the Registry).
+**[Visit Website](https://opaque.cash)**
+
+**Opaque Cash** is a stealth-address wallet and privacy protocol. See [DISCLAIMER.md](DISCLAIMER.md) for important notes on the experimental nature of the stealth address cryptography and local storage usage. built on **EIP-5564** (Stealth Addresses) and a **Stealth Meta-Address Registry**. Users receive ETH and ERC-20 tokens at one-time stealth addresses derived from a single meta-address; senders can target recipients by meta-address or by standard Ethereum address (resolved via the Registry).
 
 This document is the authoritative technical reference for the protocol architecture, system components, local setup, mainnet deployment, and user experience.
 
