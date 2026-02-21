@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { Footer } from "./Footer";
 import { AddressDisplay } from "./AddressDisplay";
+import { TestnetBanner } from "./TestnetBanner";
 
 export type Tab = "dashboard" | "send" | "receive" | "balance" | "history" | "subens" | "profile";
 
@@ -233,6 +234,8 @@ export function Layout({
           onDisconnect={onDisconnect}
         />
       </div>
+
+      <TestnetBanner isConnected={isConnected} />
 
       <div className="flex-1 min-h-0 overflow-y-auto pt-8 md:pt-14 pb-20 md:pb-52">
         <main

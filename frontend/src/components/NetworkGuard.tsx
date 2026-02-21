@@ -1,7 +1,8 @@
 import { useState, type ReactNode } from "react";
 import { useWallet } from "../hooks/useWallet";
-import { isChainSupported } from "../contracts/contract-config";
 
+/** Sepolia Testnet – Opaque is currently optimized for this chain only. */
+const SEPOLIA_CHAIN_ID = 11155111;
 const SEPOLIA_HEX = "0xaa36a7";
 
 type NetworkGuardProps = {
@@ -11,8 +12,7 @@ type NetworkGuardProps = {
 export function NetworkGuard({ children }: NetworkGuardProps) {
   const { isConnected, chainId } = useWallet();
   const [switching, setSwitching] = useState(false);
-  const supported = isChainSupported(chainId);
-  const showUnsupported = isConnected && chainId != null && !supported;
+  const showUnsupported = isConnected && chainId != null && chainId !== SEPOLIA_CHAIN_ID;
 
   const handleSwitchNetwork = async () => {
     const ethereum = (window as unknown as { ethereum?: { request: (args: unknown) => Promise<unknown> } }).ethereum;
@@ -48,11 +48,10 @@ export function NetworkGuard({ children }: NetworkGuardProps) {
           onClick={(e) => e.stopPropagation()}
         >
           <h2 id="network-guard-title" className="text-xl font-semibold text-white mb-2">
-            Network Not Supported
+            Unsupported Network Detected
           </h2>
           <p className="text-neutral-400 text-sm mb-6">
-            Opaque Cash currently supports Ethereum, Sepolia, and Hardhat. Please
-            switch to a supported network to continue.
+            Opaque is currently optimized for Sepolia Testnet to ensure privacy and safety during our beta phase.
           </p>
           <button
             type="button"
@@ -60,11 +59,8 @@ export function NetworkGuard({ children }: NetworkGuardProps) {
             disabled={switching}
             className="w-full py-2.5 px-4 rounded-lg text-sm font-medium btn-primary disabled:opacity-50"
           >
-            {switching ? "Switching…" : "Switch to Supported Network"}
+            {switching ? "Switching…" : "Switch to Sepolia"}
           </button>
-          <p className="text-neutral-500 text-xs mt-4 text-center">
-            Default: Sepolia testnet
-          </p>
         </div>
       </div>
     </>

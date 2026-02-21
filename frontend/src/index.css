@@ -73,6 +73,17 @@ body {
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
 }
 
+/* Liquid glass: testnet banner – subtle, sleek strip at top */
+.banner-glass {
+  background: linear-gradient(
+    135deg,
+    rgba(17, 17, 17, 0.6) 0%,
+    rgba(10, 10, 10, 0.75) 100%
+  );
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
 .btn-primary {
   background: var(--color-white);
   color: var(--color-black);
