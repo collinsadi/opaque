@@ -9,6 +9,7 @@
     "deploy": "hardhat ignition deploy ignition/modules/Stealth.ts",
     "deploy:local": "hardhat ignition deploy ignition/modules/Stealth.ts --network localhost",
     "deploy:base-sepolia": "hardhat ignition deploy ignition/modules/Stealth.ts --network baseSepolia",
+    "deploy:paseo": "hardhat ignition deploy ignition/modules/Stealth.ts --network paseo",
     "deploy:sepolia": "hardhat ignition deploy ignition/modules/Stealth.ts --network sepolia",
     "deploy:sepolia:verify": "hardhat ignition deploy ignition/modules/Stealth.ts --network sepolia --verify",
     "deploy:tokens": "hardhat ignition deploy ignition/modules/Tokens.ts",
@@ -16,11 +17,13 @@
     "deploy:tokens:sepolia": "hardhat ignition deploy ignition/modules/Tokens.ts --network sepolia",
     "deploy:tokens:sepolia:verify": "hardhat ignition deploy ignition/modules/Tokens.ts --network sepolia --verify",
     "deploy:tokens:base-sepolia": "hardhat ignition deploy ignition/modules/Tokens.ts --network baseSepolia",
+    "deploy:tokens:paseo": "hardhat ignition deploy ignition/modules/Tokens.ts --network paseo",
     "verify:sepolia": "hardhat verify --network sepolia",
     "clean": "hardhat clean",
     "deploy:scripts": "tsx scripts/deploy.ts"
   },
   "dependencies": {
+    "dotenv": "^17.3.1",
     "ethers": "^6.13.4"
   },
   "devDependencies": {

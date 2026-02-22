@@ -11,6 +11,9 @@ import { ethers } from "ethers";
 import * as fs from "fs";
 import * as path from "path";
 import { fileURLToPath } from "url";
+import dotenv from "dotenv";
+
+dotenv.config();
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -39,12 +42,14 @@ function loadArtifact(contractName: string): Artifact {
   return artifact;
 }
 
+const PASEO_RPC = "https://services.polkadothub-rpc.com/testnet";
+
 async function main() {
-  const rpcUrl = process.env.RPC_URL ?? "http://127.0.0.1:8545";
+  const rpcUrl = process.env.PASEO_RPC_URL ?? PASEO_RPC;
   const provider = new ethers.JsonRpcProvider(rpcUrl);
-  const privateKey = process.env.PRIVATE_KEY;
-  if (!privateKey) {
-    throw new Error("Set PRIVATE_KEY (e.g. from Hardhat node account #0) to run deploy.");
+  const privateKey = process.env.PASEO_PRIVATE_KEY ?? process.env.PRIVATE_KEY;
+  if (!privateKey?.startsWith("0x") || privateKey.length < 64) {
+    throw new Error("Set PASEO_PRIVATE_KEY (or PRIVATE_KEY) in .env to deploy to Polkadot testnet.");
   }
   const signer = new ethers.Wallet(privateKey, provider);
   const chainId = Number((await provider.getNetwork()).chainId);
@@ -63,8 +68,8 @@ async function main() {
     const contract = await factory.deploy({ nonce: nextNonce });
     const deployTx = contract.deploymentTransaction();
     await contract.waitForDeployment();
-    if (contractName === "StealthAddressAnnouncer" && deployTx) {
-      const receipt = await deployTx.getTransactionReceipt();
+    if (contractName === "StealthAddressAnnouncer" && deployTx?.hash) {
+      const receipt = await provider.getTransactionReceipt(deployTx.hash);
       if (receipt?.blockNumber != null) deployedBlockNumber = receipt.blockNumber;
     }
     nextNonce += 1;

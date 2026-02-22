@@ -8,6 +8,7 @@ const EXPLORER_BASES: Record<number, string> = {
   1: "https://etherscan.io",
   11155111: "https://sepolia.etherscan.io",
   31337: "http://localhost:8545",
+  420420417: "https://blockscout-testnet.polkadot.io",
 };
 
 export function getExplorerTxUrl(chainId: number, txHash: string | null): string | null {

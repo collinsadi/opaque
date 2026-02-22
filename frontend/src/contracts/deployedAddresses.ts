@@ -4,11 +4,11 @@
  */
 
 export const deployedAddresses = {
-  chainId: 31337,
-  StealthMetaAddressRegistry: "0x5095d3313C76E8d29163e40a0223A5816a8037D8" as const,
-  StealthAddressAnnouncer: "0x391342f5acAcaaC9DE1dC4eC3E03f2678f7c78F1" as const,
-  USDC: "0x6d925938Edb8A16B3035A4cF34FAA090f490202a" as const,
-  USDT: "0xED8CAB8a931A4C0489ad3E3FB5BdEA84f74fD23E" as const,
+  chainId: 420420417,
+  StealthMetaAddressRegistry: "0x6b37BD0Fc564dc353989B6A5E9c50b2fb68FB2a0" as const,
+  StealthAddressAnnouncer: "0xD5FDa624D5F58F4586A959ff3e9c7CA72a9b74D8" as const,
+  USDC: "0xEd6cF00a74D876Df67533abB09820dE2c7DD6533" as const,
+  USDT: "0xD0f91C535265a7958F7D16639C59608C4F3B5e5E" as const,
 } as const;
 
 export type DeployedAddresses = typeof deployedAddresses;

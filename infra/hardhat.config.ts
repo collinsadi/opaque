@@ -36,16 +36,17 @@ export default defineConfig({
     sepolia: {
       type: "http",
       chainType: "l1",
-      url: "",
+      url: configVariable("SEPOLIA_RPC_URL"),
       chainId: 11155111,
-      accounts: [""],
+      accounts: [configVariable("SEPOLIA_PRIVATE_KEY")],
     },
-    baseSepolia: {
+    // Polkadot Hub testnet (Paseo) – use deploy:paseo or deploy:tokens:paseo
+    paseo: {
       type: "http",
       chainType: "l1",
-      url: configVariable("BASE_SEPOLIA_RPC_URL"),
-      chainId: 84532,
-      accounts: [configVariable("BASE_SEPOLIA_PRIVATE_KEY")],
+      url: "https://services.polkadothub-rpc.com/testnet",
+      chainId: 420420417,
+      accounts: [configVariable("PASEO_PRIVATE_KEY")],
     },
     localhost: {
       type: "http",

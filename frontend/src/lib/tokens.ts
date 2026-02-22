@@ -4,6 +4,7 @@
  */
 
 import type { Address } from "viem";
+import { getChain } from "./chain";
 import { MULTICHAIN_CONFIG } from "../contracts/contract-config";
 
 export type TokenInfo = {
@@ -17,13 +18,6 @@ export type TokenInfo = {
 export type ChainTokens = {
   native: TokenInfo;
   tokens: TokenInfo[];
-};
-
-const NATIVE_ETH: TokenInfo = {
-  symbol: "ETH",
-  name: "Ether",
-  decimals: 18,
-  address: null,
 };
 
 const TOKEN_META: Record<string, { name: string; decimals: number }> = {
@@ -43,11 +37,19 @@ const ERC20_BALANCE_ABI = [
 
 /**
  * Get tokens config for a chain from MULTICHAIN_CONFIG. Only tokens listed for that chain are returned.
+ * Native token uses the chain's nativeCurrency (e.g. PAS on Paseo, ETH on Ethereum).
  */
 export function getTokensForChain(chainId: number): ChainTokens {
+  const chain = getChain(chainId);
+  const native: TokenInfo = {
+    symbol: chain.nativeCurrency.symbol,
+    name: chain.nativeCurrency.name,
+    decimals: chain.nativeCurrency.decimals,
+    address: null,
+  };
   const config = MULTICHAIN_CONFIG[chainId];
   if (!config?.tokens) {
-    return { native: NATIVE_ETH, tokens: [] };
+    return { native, tokens: [] };
   }
   const tokens: TokenInfo[] = [];
   for (const [symbol, address] of Object.entries(config.tokens)) {
@@ -61,7 +63,7 @@ export function getTokensForChain(chainId: number): ChainTokens {
       });
     }
   }
-  return { native: NATIVE_ETH, tokens };
+  return { native, tokens };
 }
 
 /**

@@ -17,6 +17,7 @@ import { getConfigForChain, isChainSupported } from "../contracts/contract-confi
 import { Layout } from "./Layout";
 import { ProtocolLogPanel } from "./ProtocolLogPanel";
 import { useToast } from "../context/ToastContext";
+import { SwitchNetworkModal } from "./SwitchNetworkModal";
 
 const MINT_DECIMALS = 6;
 const MINT_AMOUNT_RAW = 200;
@@ -35,8 +36,6 @@ const MOCK_ERC20_MINT_ABI = [
   },
 ] as const;
 
-const SEPOLIA_HEX = "0xaa36a7";
-
 type ClaimStatus = "idle" | "loading" | "success" | "error";
 
 export function FaucetPage() {
@@ -49,7 +48,7 @@ export function FaucetPage() {
   const [usdcStatus, setUsdcStatus] = useState<ClaimStatus>("idle");
   const [usdtStatus, setUsdtStatus] = useState<ClaimStatus>("idle");
   const [claimError, setClaimError] = useState<string | null>(null);
-  const [switching, setSwitching] = useState(false);
+  const [showSwitchModal, setShowSwitchModal] = useState(false);
 
   const hasMockTokens =
     config?.tokens &&
@@ -106,22 +105,6 @@ export function FaucetPage() {
     }
   };
 
-  const handleSwitchNetwork = async () => {
-    const ethereum = (window as unknown as { ethereum?: { request: (args: unknown) => Promise<unknown> } }).ethereum;
-    if (!ethereum?.request) return;
-    setSwitching(true);
-    try {
-      await ethereum.request({
-        method: "wallet_switchEthereumChain",
-        params: [{ chainId: SEPOLIA_HEX }],
-      });
-    } catch (err) {
-      console.warn("[Opaque] Switch network failed", err);
-    } finally {
-      setSwitching(false);
-    }
-  };
-
   return (
     <Layout
       tab="dashboard"
@@ -144,18 +127,34 @@ export function FaucetPage() {
         {/* Switch Network notice */}
         {showSwitchNetwork && (
           <div className="card border-amber-500/30 bg-amber-500/5 mb-8">
-            <h2 className="text-lg font-semibold text-amber-200 mb-2">Switch Network</h2>
+            <h2 className="text-lg font-semibold text-amber-200 mb-2">Switch network</h2>
             <p className="text-neutral-400 text-sm mb-4">
-              The faucet is only available on supported testnets (e.g. Sepolia). Please switch to a supported network to claim mock tokens.
+              The faucet is available on Sepolia and Paseo (Polkadot Hub testnet). Switch to one of these networks to claim mock tokens.
             </p>
             <button
               type="button"
-              onClick={handleSwitchNetwork}
-              disabled={switching}
-              className="w-full py-2.5 px-4 rounded-lg text-sm font-medium btn-primary disabled:opacity-50"
+              onClick={() => setShowSwitchModal(true)}
+              className="w-full py-2.5 px-4 rounded-lg text-sm font-medium btn-primary"
             >
-              {switching ? "Switching…" : "Switch to Supported Network"}
+              Switch network
             </button>
+            {showSwitchModal && (
+              <div
+                className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-md"
+                role="dialog"
+                aria-modal="true"
+                onClick={() => setShowSwitchModal(false)}
+              >
+                <div className="max-w-md w-full" onClick={(e) => e.stopPropagation()}>
+                  <SwitchNetworkModal
+                    title="Switch network"
+                    description="Choose Sepolia or Paseo to use the faucet."
+                    showClose
+                    onClose={() => setShowSwitchModal(false)}
+                  />
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -233,7 +232,7 @@ export function FaucetPage() {
             ) : isConnected && supported && !hasMockTokens && (
               <div className="card border-neutral-700 mb-8">
                 <p className="text-neutral-400 text-sm">
-                  Mock token faucet is not deployed on this network. Switch to Sepolia to claim.
+                  Mock token faucet is not deployed on this network. Switch to Sepolia or Paseo to claim.
                 </p>
               </div>
             )}

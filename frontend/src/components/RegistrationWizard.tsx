@@ -23,10 +23,8 @@ import {
   STEALTH_REGISTRY_ABI,
 } from "../lib/registry";
 import { SCHEME_ID_SECP256K1 } from "../lib/contracts";
-import { getConfigForChain } from "../contracts/contract-config";
-
-const SEPOLIA_CHAIN_ID = 11155111;
-const SEPOLIA_HEX = "0xaa36a7";
+import { getConfigForChain, isChainSupported } from "../contracts/contract-config";
+import { SwitchNetworkModal } from "./SwitchNetworkModal";
 
 const SETUP_MESSAGE =
   "Sign this message to derive your Opaque Cash stealth keys. This does not approve any transaction.";
@@ -47,26 +45,10 @@ export function RegistrationWizard({ onComplete }: RegistrationWizardProps) {
   const [registerPhase, setRegisterPhase] = useState<RegisterPhase>("idle");
   const [error, setError] = useState<string | null>(null);
   const [, setTxHash] = useState<Hash | null>(null);
-  const [switchingNetwork, setSwitchingNetwork] = useState(false);
+  const [showSwitchModal, setShowSwitchModal] = useState(false);
 
-  const wrongNetwork = chainId != null && chainId !== SEPOLIA_CHAIN_ID;
+  const wrongNetwork = chainId != null && !isChainSupported(chainId);
   const networkName = chainId != null ? getChain(chainId).name : "this network";
-
-  const handleSwitchToSepolia = async () => {
-    const ethereum = (window as unknown as { ethereum?: { request: (args: unknown) => Promise<unknown> } }).ethereum;
-    if (!ethereum?.request) return;
-    setSwitchingNetwork(true);
-    try {
-      await ethereum.request({
-        method: "wallet_switchEthereumChain",
-        params: [{ chainId: SEPOLIA_HEX }],
-      });
-    } catch (err) {
-      console.warn("[Opaque] Switch network failed", err);
-    } finally {
-      setSwitchingNetwork(false);
-    }
-  };
 
   const handleGenerateKeys = async () => {
     if (!address || !(window as unknown as { ethereum?: EIP1193Provider }).ethereum?.request) {
@@ -240,16 +222,32 @@ export function RegistrationWizard({ onComplete }: RegistrationWizardProps) {
                 {wrongNetwork && (
                   <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 space-y-2">
                     <p className="text-sm text-amber-200">
-                      Wrong Network: Opaque Registration is only available on Sepolia.
+                      Wrong network: registration is available on Sepolia and Paseo (Polkadot Hub testnet) only.
                     </p>
                     <button
                       type="button"
-                      onClick={handleSwitchToSepolia}
-                      disabled={switchingNetwork}
-                      className="w-full py-2 px-3 rounded-lg text-sm font-medium bg-amber-500/20 text-amber-200 border border-amber-500/40 hover:bg-amber-500/30 disabled:opacity-50"
+                      onClick={() => setShowSwitchModal(true)}
+                      className="w-full py-2 px-3 rounded-lg text-sm font-medium bg-amber-500/20 text-amber-200 border border-amber-500/40 hover:bg-amber-500/30"
                     >
-                      {switchingNetwork ? "Switching…" : "Switch to Sepolia"}
+                      Switch network
                     </button>
+                    {showSwitchModal && (
+                      <div
+                        className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-md"
+                        role="dialog"
+                        aria-modal="true"
+                        onClick={() => setShowSwitchModal(false)}
+                      >
+                        <div className="max-w-md w-full" onClick={(e) => e.stopPropagation()}>
+                          <SwitchNetworkModal
+                            title="Switch network"
+                            description="Choose Sepolia or Paseo to register your stealth meta-address."
+                            showClose
+                            onClose={() => setShowSwitchModal(false)}
+                          />
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
                 <p className="text-sm text-neutral-400">

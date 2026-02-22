@@ -1,5 +1,9 @@
+import { useState } from "react";
 import type { Tab } from "./Layout";
 import { ExplorerLink } from "./ExplorerLink";
+import { getChain } from "../lib/chain";
+import { isChainSupported } from "../contracts/contract-config";
+import { SwitchNetworkModal } from "./SwitchNetworkModal";
 
 type DashboardViewProps = {
   onNavigate: (t: Tab) => void;
@@ -8,6 +12,9 @@ type DashboardViewProps = {
 };
 
 export function DashboardView({ onNavigate, address, chainId }: DashboardViewProps) {
+  const [showSwitchModal, setShowSwitchModal] = useState(false);
+  const canChangeNetwork = chainId != null && isChainSupported(chainId);
+
   return (
     <div className="w-full max-w-2xl mx-auto">
       <div className="flex flex-wrap items-center justify-between gap-3 mb-1">
@@ -16,9 +23,21 @@ export function DashboardView({ onNavigate, address, chainId }: DashboardViewPro
           <ExplorerLink chainId={chainId} value={address} type="address" className="shrink-0 text-neutral-400" />
         )}
       </div>
-      <p className="text-sm text-neutral-500 mb-8">
+      <p className={`text-sm text-neutral-500 ${canChangeNetwork ? "mb-2" : "mb-8"}`}>
         Send or receive with privacy.
       </p>
+      {canChangeNetwork && (
+        <div className="flex flex-wrap items-center gap-2 mb-8">
+          <span className="text-sm text-neutral-500">Network: {getChain(chainId).name}</span>
+          <button
+            type="button"
+            onClick={() => setShowSwitchModal(true)}
+            className="px-3 py-1.5 rounded-lg text-xs font-medium text-neutral-400 hover:text-white border border-white/20 hover:border-white/40 transition-colors"
+          >
+            Change network
+          </button>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <button
@@ -59,6 +78,25 @@ export function DashboardView({ onNavigate, address, chainId }: DashboardViewPro
           Transaction history
         </button>
       </div>
+
+      {showSwitchModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-md"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="dashboard-switch-network-title"
+          onClick={() => setShowSwitchModal(false)}
+        >
+          <div className="max-w-md w-full" onClick={(e) => e.stopPropagation()}>
+            <SwitchNetworkModal
+              title="Change network"
+              description="Choose Sepolia or Paseo. Your balance, history, and registration are per network and will refresh."
+              showClose
+              onClose={() => setShowSwitchModal(false)}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

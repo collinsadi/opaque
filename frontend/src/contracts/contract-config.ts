@@ -47,6 +47,13 @@ const STATIC_CONFIG: Record<number, ChainContractConfig> = {
     },
     deployedBlock: 0,
   },
+  /** Polkadot Hub testnet (Paseo PassetHub). Set via deployed-addresses.json after deploy. */
+  420420417: {
+    registry: "0x6b37BD0Fc564dc353989B6A5E9c50b2fb68FB2a0" as Address,
+    announcer: "0xD5FDa624D5F58F4586A959ff3e9c7CA72a9b74D8" as Address,
+    tokens: { USDC: "0xEd6cF00a74D876Df67533abB09820dE2c7DD6533" as Address, USDT: "0xD0f91C535265a7958F7D16639C59608C4F3B5e5E" as Address },
+    deployedBlock: 5590094,
+  },
 };
 
 type DeployedJson = {
@@ -88,17 +95,24 @@ export function getConfigForChain(chainId: number | null | undefined): ChainCont
   return MULTICHAIN_CONFIG[chainId] ?? null;
 }
 
-/** Supported chain IDs (Ethereum, Sepolia, Hardhat local). */
-export const SUPPORTED_CHAIN_IDS: readonly number[] = [11155111, 31337];
+/** Supported chain IDs (Ethereum, Sepolia, Hardhat local, Paseo). */
+export const SUPPORTED_CHAIN_IDS: readonly number[] = [11155111, 31337, 420420417];
 
 export function isChainSupported(chainId: number | null | undefined): boolean {
   return chainId != null && chainId in MULTICHAIN_CONFIG;
 }
 
-/** Subgraph URL for announcement indexer (e.g. The Graph). When set, scanner uses indexer first and falls back to chunked RPC on failure. */
+/** Paseo (Polkadot Hub testnet) chain ID – uses VITE_POLKADOT_SUBGRAPH_URL when set. */
+const PASEO_CHAIN_ID = 420420417;
+
+/** Subgraph URL for announcement indexer (e.g. The Graph). When set, scanner uses indexer first and falls back to chunked RPC on failure. For Paseo, uses VITE_POLKADOT_SUBGRAPH_URL when set. */
 export function getSubgraphUrl(chainId: number | null | undefined): string | null {
   if (chainId == null) return null;
-  const fromEnv = import.meta.env.VITE_SUBGRAPH_URL as string | undefined;
+  const polkadotUrl =
+    chainId === PASEO_CHAIN_ID
+      ? (import.meta.env.VITE_POLKADOT_SUBGRAPH_URL as string | undefined)
+      : undefined;
+  const fromEnv = (polkadotUrl ?? import.meta.env.VITE_SUBGRAPH_URL) as string | undefined;
   if (fromEnv && fromEnv.trim().length > 0) return fromEnv.trim();
   return null;
 }
