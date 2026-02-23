@@ -1,7 +1,7 @@
 /**
  * Testnet awareness banner: always visible at the top of the app.
- * - When connected: Alpha Phase + Sepolia testnet ETH reminder.
- * - When not connected: Connect wallet CTA for Sepolia vault.
+ * - When connected: Alpha Phase + Testnet ETH reminder.
+ * - When not connected: Connect wallet CTA for Testnet vault.
  */
 
 type TestnetBannerProps = {
@@ -31,8 +31,8 @@ function FlaskIcon() {
 
 export function TestnetBanner({ isConnected }: TestnetBannerProps) {
   const copy = isConnected
-    ? "🚀 Alpha Phase: Opaque is live on Sepolia. Please ensure you are using testnet only."
-    : "Connect your wallet to access your private stealth vault on Sepolia.";
+    ? "🚀 Alpha Phase: Opaque is live on Testnet. Please ensure you are using testnet only."
+    : "Connect your wallet to access your private stealth vault on Testnet.";
 
   return (
     <div
