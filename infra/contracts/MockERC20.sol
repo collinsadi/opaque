@@ -3,7 +3,7 @@ pragma solidity ^0.8.20;
 
 /**
  * @title MockERC20
- * @notice Minimal ERC20 for local/testing. Mintable by anyone.
+ * @notice Minimal ERC20 for local/testing. Mintable by anyone. EIP-2612 permit support.
  */
 contract MockERC20 {
     string private _name;
@@ -12,6 +12,14 @@ contract MockERC20 {
     uint256 private _totalSupply;
     mapping(address => uint256) private _balances;
     mapping(address => mapping(address => uint256)) private _allowances;
+
+    // EIP-2612 permit
+    mapping(address => uint256) public nonces;
+
+    bytes32 public constant PERMIT_TYPEHASH =
+        keccak256("Permit(address owner,address spender,uint256 value,uint256 nonce,uint256 deadline)");
+    bytes32 private constant _DOMAIN_TYPEHASH =
+        keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
 
     event Transfer(address indexed from, address indexed to, uint256 value);
     event Approval(address indexed owner, address indexed spender, uint256 value);
@@ -55,6 +63,41 @@ contract MockERC20 {
         }
         _transfer(from, to, amount);
         return true;
+    }
+
+    /// @dev EIP-2612 domain separator
+    function DOMAIN_SEPARATOR() public view returns (bytes32) {
+        return keccak256(
+            abi.encode(
+                _DOMAIN_TYPEHASH,
+                keccak256(bytes(_name)),
+                keccak256(bytes("1")), // version
+                block.chainid,
+                address(this)
+            )
+        );
+    }
+
+    /// @dev EIP-2612 permit: approve via signature
+    function permit(
+        address owner,
+        address spender,
+        uint256 value,
+        uint256 deadline,
+        uint8 v,
+        bytes32 r,
+        bytes32 s
+    ) external {
+        require(deadline >= block.timestamp, "ERC20Permit: expired deadline");
+        uint256 currentNonce = nonces[owner];
+        bytes32 structHash = keccak256(
+            abi.encode(PERMIT_TYPEHASH, owner, spender, value, currentNonce, deadline)
+        );
+        bytes32 digest = keccak256(abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR(), structHash));
+        address signer = ecrecover(digest, v, r, s);
+        require(signer != address(0) && signer == owner, "ERC20Permit: invalid signature");
+        nonces[owner] = currentNonce + 1;
+        _approve(owner, spender, value);
     }
 
     function _transfer(address from, address to, uint256 amount) internal {

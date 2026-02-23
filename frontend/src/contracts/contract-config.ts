@@ -33,8 +33,8 @@ const STATIC_CONFIG: Record<number, ChainContractConfig> = {
     registry: "0x77425e04163d608B876c7f50E34A378624A12067" as Address,
     announcer: "0x840f72249A8bF6F10b0eB64412E315efBD730865" as Address,
     tokens: {
-      USDC: "0x7aD6F36984EA947B80A2A282BDfb27d0E888792e",
-      USDT: "0x3b9B3EdDdc5ABBc5Cd474EB7EB5EcE4881272D20",
+      USDC: "0x73197e8303904862d543f9706E8422F634D713cb",
+      USDT: "0x6Ff8Afb2aA9eB5A89Ce86c44DD460bD17C92f644",
     },
     deployedBlock: 5_500_000,
   },
@@ -51,7 +51,7 @@ const STATIC_CONFIG: Record<number, ChainContractConfig> = {
   420420417: {
     registry: "0x6b37BD0Fc564dc353989B6A5E9c50b2fb68FB2a0" as Address,
     announcer: "0xD5FDa624D5F58F4586A959ff3e9c7CA72a9b74D8" as Address,
-    tokens: { USDC: "0xEd6cF00a74D876Df67533abB09820dE2c7DD6533" as Address, USDT: "0xD0f91C535265a7958F7D16639C59608C4F3B5e5E" as Address },
+    tokens: { USDC: "0x7578bE2911D0DfcfcC2eDF0c6c3915f97BDd12b3" as Address, USDT: "0x5e29dc20B2b301dd420326f7918E739981e0A3a2" as Address },
     deployedBlock: 5590094,
   },
 };

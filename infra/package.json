@@ -20,7 +20,7 @@
     "deploy:tokens:paseo": "hardhat ignition deploy ignition/modules/Tokens.ts --network paseo",
     "verify:sepolia": "hardhat verify --network sepolia",
     "clean": "hardhat clean",
-    "deploy:scripts": "tsx scripts/deploy.ts"
+    "deploy:scripts": "hardhat compile && tsx scripts/deploy.ts"
   },
   "dependencies": {
     "dotenv": "^17.3.1",
