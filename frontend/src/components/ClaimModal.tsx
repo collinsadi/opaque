@@ -13,6 +13,9 @@ type ClaimModalProps = {
   chainId: number | null;
   claiming: boolean;
   error: string | null;
+  gaslessEligible?: boolean;
+  gaslessEligibilityChecking?: boolean;
+  gaslessCheckComplete?: boolean;
   withdrawalSteps?: ProtocolStep[];
   onDestinationChange: (value: string) => void;
   onConfirm: () => void;
@@ -32,6 +35,9 @@ export function ClaimModal({
   chainId,
   claiming,
   error,
+  gaslessEligible = false,
+  gaslessEligibilityChecking = false,
+  gaslessCheckComplete = false,
   withdrawalSteps = [],
   onDestinationChange,
   onConfirm,
@@ -80,6 +86,18 @@ export function ClaimModal({
           <p>2. Create independent transaction signed by stealth key</p>
           <p>3. On-chain sender = stealth address, no identity link</p>
         </div>
+
+        {asset.address !== null && (gaslessEligibilityChecking || gaslessEligible || gaslessCheckComplete) && (
+          <div className={`mb-4 p-3 rounded-lg border text-sm ${gaslessCheckComplete && !gaslessEligible ? "border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400" : "border-success/30 bg-success/10 text-success"}`}>
+            {gaslessEligibilityChecking ? (
+              <span>Checking gasless eligibility…</span>
+            ) : gaslessEligible ? (
+              <span>This asset is eligible for gasless sweeping. Your Gas Tank will pay the network fee.</span>
+            ) : gaslessCheckComplete ? (
+              <span>Gasless sweep not available for this token (permit not supported or gas tank balance too low). Check the console for details.</span>
+            ) : null}
+          </div>
+        )}
 
         <div className="mb-4">
           <label className="block text-sm text-neutral-500 mb-1.5 font-mono">

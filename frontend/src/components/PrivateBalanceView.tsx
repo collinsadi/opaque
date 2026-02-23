@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { createPublicClient, http, formatEther, hexToBytes, getAddress, isAddress } from "viem";
+import { createPublicClient, http, formatEther, hexToBytes, getAddress, isAddress, type Address } from "viem";
 import { getChain, getRpcUrl } from "../lib/chain";
 import { getConfigForChain } from "../contracts/contract-config";
 import { STEALTH_ANNOUNCER_ABI } from "../lib/contracts";
@@ -8,7 +8,7 @@ import { useScanner } from "../hooks/useScanner";
 import type { CachedAnnouncement } from "../lib/opaqueCache";
 import { useKeys } from "../context/KeysContext";
 import { useWallet } from "../hooks/useWallet";
-import { executeStealthWithdrawal, checkStealthWithdrawalGas, withdrawFromGhostAddress } from "../lib/stealthLifecycle";
+import { executeStealthWithdrawal, checkStealthWithdrawalGas, withdrawFromGhostAddress, executeTokenWithdrawal, tokenSupportsPermit, checkGasTankSufficientForPermitSweep, executeTokenWithdrawalViaPermit, getGasTankAccount } from "../lib/stealthLifecycle";
 import type { MasterKeys } from "../lib/stealthLifecycle";
 import type { ProtocolStep } from "./ProtocolStepper";
 import type { OpaqueWasmModule } from "../hooks/useOpaqueWasm";
@@ -23,8 +23,8 @@ import { useToast } from "../context/ToastContext";
 import { secp256k1 } from "@noble/curves/secp256k1";
 import { getTokensForChain, ERC20_BALANCE_ABI } from "../lib/tokens";
 import type { TokenInfo } from "../lib/tokens";
-import { executeTokenWithdrawal } from "../lib/stealthLifecycle";
 import { ExplorerLink } from "./ExplorerLink";
+import { useGasTankStore } from "../store/gasTankStore";
 
 export type FoundTx = {
   id: string;
@@ -227,7 +227,11 @@ export function PrivateBalanceView() {
   const [newlyDetectedIds, setNewlyDetectedIds] = useState<string[]>([]);
   const [claimModalTx, setClaimModalTx] = useState<FoundTx | null>(null);
   const [claimAsset, setClaimAsset] = useState<TokenInfo | null>(null);
+  const [gaslessEligible, setGaslessEligible] = useState<boolean>(false);
+  const [gaslessEligibilityChecking, setGaslessEligibilityChecking] = useState(false);
+  const [gaslessCheckComplete, setGaslessCheckComplete] = useState(false);
   const [gasRequiredStealthAddress, setGasRequiredStealthAddress] = useState<string | null>(null);
+  const { initialized: gasTankInitialized, tankAddress: gasTankAddress } = useGasTankStore();
   const [ghostTxs, setGhostTxs] = useState<FoundTx[]>([]);
   const [selectedAsset, setSelectedAsset] = useState<TokenInfo | null>(null);
   const [syncingPaused, setSyncingPaused] = useState(false);
@@ -308,6 +312,71 @@ export function PrivateBalanceView() {
     return result;
   }, [found, ghostTxs, allAssets]);
 
+  // When claim modal is open for an ERC20, check if gasless (permit + gas tank) is eligible
+  useEffect(() => {
+    if (!claimModalTx || !claimAsset || claimAsset.address === null || !publicClient || !gasTankInitialized || !gasTankAddress) {
+      setGaslessEligible(false);
+      setGaslessEligibilityChecking(false);
+      setGaslessCheckComplete(false);
+      return;
+    }
+    const tokenAddress = claimAsset.address as `0x${string}`;
+    const amountRaw = claimModalTx.tokenBalances[tokenAddress] ?? 0n;
+    if (amountRaw === 0n) {
+      setGaslessEligible(false);
+      setGaslessEligibilityChecking(false);
+      setGaslessCheckComplete(false);
+      return;
+    }
+    const destInput = (destinationByTxId[claimModalTx.id] ?? "").trim();
+    const destination = destInput && isAddress(destInput) ? getAddress(destInput) : ("0x0000000000000000000000000000000000000001" as Address);
+
+    let cancelled = false;
+    setGaslessEligibilityChecking(true);
+    setGaslessCheckComplete(false);
+    (async () => {
+      try {
+        const supportsPermit = await tokenSupportsPermit(publicClient, tokenAddress);
+        if (cancelled || !supportsPermit) {
+          if (!supportsPermit) {
+            console.warn("[Opaque] Gasless sweep: token does not support EIP-2612 permit", { tokenAddress });
+          }
+          setGaslessEligible(false);
+          setGaslessEligibilityChecking(false);
+          if (!cancelled) setGaslessCheckComplete(true);
+          return;
+        }
+        const result = await checkGasTankSufficientForPermitSweep(
+          publicClient,
+          gasTankAddress,
+          tokenAddress,
+          amountRaw,
+          claimModalTx.address as Address,
+          destination
+        );
+        if (!cancelled) {
+          setGaslessEligible(result.sufficient);
+          if (!result.sufficient) {
+            console.warn("[Opaque] Gasless sweep: gas tank balance insufficient", {
+              tokenAddress,
+              balanceWei: result.balanceWei.toString(),
+              estimatedGasWei: result.estimatedGasWei.toString(),
+            });
+          }
+        }
+      } catch (err) {
+        console.error("[Opaque] Gasless eligibility check failed", err);
+        if (!cancelled) setGaslessEligible(false);
+      } finally {
+        if (!cancelled) {
+          setGaslessEligibilityChecking(false);
+          setGaslessCheckComplete(true);
+        }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [claimModalTx, claimAsset, publicClient, gasTankInitialized, gasTankAddress, destinationByTxId]);
+
   const setDestination = useCallback((txId: string, value: string) => {
     setDestinationByTxId((prev) => ({ ...prev, [txId]: value }));
   }, []);
@@ -346,30 +415,34 @@ export function PrivateBalanceView() {
         transport: http(rpcUrl),
       });
 
-      // Intercept if stealth address has insufficient ETH for gas (P_balance < G)
-      try {
-        const gasCheck =
-          isNative
-            ? await checkStealthWithdrawalGas(publicClient, tx.address as `0x${string}`, {
-                type: "native",
-                destination: getAddress(trimmed),
-              })
-            : await checkStealthWithdrawalGas(publicClient, tx.address as `0x${string}`, {
-                type: "token",
-                tokenAddress: asset.address!,
-                destination: getAddress(trimmed),
-                tokenBalance: amountRaw,
-              });
-        if (!gasCheck.sufficient) {
-          setClaimModalTx(null);
-          setClaimAsset(null);
-          setClaimError(null);
-          setGasRequiredStealthAddress(tx.address);
-          return;
+      // Intercept if stealth address has insufficient ETH for gas (P_balance < G).
+      // Skip when ERC20 + gasless (tank pays gas).
+      const shouldCheckStealthGas = isNative || !gaslessEligible;
+      if (shouldCheckStealthGas) {
+        try {
+          const gasCheck =
+            isNative
+              ? await checkStealthWithdrawalGas(publicClient, tx.address as `0x${string}`, {
+                  type: "native",
+                  destination: getAddress(trimmed),
+                })
+              : await checkStealthWithdrawalGas(publicClient, tx.address as `0x${string}`, {
+                  type: "token",
+                  tokenAddress: asset.address!,
+                  destination: getAddress(trimmed),
+                  tokenBalance: amountRaw,
+                });
+          if (!gasCheck.sufficient) {
+            setClaimModalTx(null);
+            setClaimAsset(null);
+            setClaimError(null);
+            setGasRequiredStealthAddress(tx.address);
+            return;
+          }
+        } catch (gasCheckErr) {
+          // If gas check fails (e.g. RPC), continue and let execute* throw a clearer error
+          console.warn("[Opaque] Gas check failed, proceeding with withdrawal", gasCheckErr);
         }
-      } catch (gasCheckErr) {
-        // If gas check fails (e.g. RPC), continue and let execute* throw a clearer error
-        console.warn("[Opaque] Gas check failed, proceeding with withdrawal", gasCheckErr);
       }
 
       setClaimingId(tx.id);
@@ -424,13 +497,26 @@ export function PrivateBalanceView() {
             publicClient,
             keysContext.getMasterKeys!,
             wasm!,
-            onStatus
+            onStatus,
+            !isNative && gaslessEligible && wasm && keysContext.stealthMetaAddressHex
+              ? getGasTankAccount(wasm, keysContext.getMasterKeys!(), keysContext.stealthMetaAddressHex).privateKey
+              : undefined
           );
         } else {
           if (isNative) {
             withdrawalHash = await executeStealthWithdrawal(
               tx.privateKey as `0x${string}`,
               getAddress(trimmed),
+              publicClient,
+              onStatus
+            );
+          } else if (gaslessEligible && wasm && keysContext.stealthMetaAddressHex) {
+            const { privateKey: gasTankPrivKey } = getGasTankAccount(wasm, keysContext.getMasterKeys!(), keysContext.stealthMetaAddressHex);
+            withdrawalHash = await executeTokenWithdrawalViaPermit(
+              tx.privateKey as `0x${string}`,
+              asset.address!,
+              getAddress(trimmed),
+              gasTankPrivKey,
               publicClient,
               onStatus
             );
@@ -442,6 +528,7 @@ export function PrivateBalanceView() {
               publicClient,
               onStatus
             );
+          }
             setFound((prev) =>
               prev.map((t) =>
                 t.id === tx.id
@@ -456,7 +543,6 @@ export function PrivateBalanceView() {
                   : t
               )
             );
-          }
         }
         const amountFormatted = isNative
           ? formatEther(amountRaw)
@@ -496,7 +582,7 @@ export function PrivateBalanceView() {
         setClaimingId(null);
       }
     },
-    [chainId, chain, pushTx, showToast, keysContext.isSetup, keysContext.getMasterKeys, wasm]
+    [chainId, chain, pushTx, showToast, keysContext.isSetup, keysContext.getMasterKeys, keysContext.stealthMetaAddressHex, wasm, gaslessEligible]
   );
 
   const handleRetrySync = useCallback(async () => {
@@ -921,6 +1007,9 @@ export function PrivateBalanceView() {
           chainId={chainId}
           claiming={claimingId === claimModalTx.id}
           error={claimError}
+          gaslessEligible={gaslessEligible}
+          gaslessEligibilityChecking={gaslessEligibilityChecking}
+          gaslessCheckComplete={gaslessCheckComplete}
           onDestinationChange={(value: string) => setDestination(claimModalTx.id, value)}
           onConfirm={() =>
             handleClaim(claimModalTx, destinationByTxId[claimModalTx.id] ?? "", claimAsset)

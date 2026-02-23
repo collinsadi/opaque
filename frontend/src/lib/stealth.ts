@@ -264,3 +264,31 @@ function bytesToBigInt(b: Uint8Array): bigint {
 
 export { getAddress };
 export type { Address, Hex };
+
+// -----------------------------------------------------------------------------
+// Gas tank: deterministic stealth address for paying gas (EIP-2612 permit flow)
+// -----------------------------------------------------------------------------
+
+const GAS_TANK_SALT = "opaque-gas-tank-v1";
+
+/**
+ * Derive a deterministic 32-byte ephemeral private key for the gas tank from the user's meta-address.
+ * Same meta-address always yields the same gas tank (same address + key) on this device.
+ * Used with WASM reconstruct_signing_key_wasm(spendPriv, viewPriv, getPublicKey(ephemeralPriv))
+ * to get the tank signing key and thus the tank address.
+ */
+export function deriveGasTankEphemeralKey(metaAddressHex: Hex): Uint8Array {
+  const raw = typeof metaAddressHex === "string" && metaAddressHex.startsWith("0x") ? metaAddressHex.slice(2) : metaAddressHex;
+  const seed = new TextEncoder().encode(raw + GAS_TANK_SALT);
+  const okm = hkdf(sha256, seed, undefined, "opaque-gas-tank-ephemeral", 32);
+  const n = CURVE.CURVE.n;
+  let scalar = bytesToBigInt(okm) % n;
+  if (scalar === 0n) scalar = 1n;
+  const out = new Uint8Array(32);
+  let x = scalar;
+  for (let i = 31; i >= 0; i--) {
+    out[i] = Number(x & 0xffn);
+    x >>= 8n;
+  }
+  return out;
+}

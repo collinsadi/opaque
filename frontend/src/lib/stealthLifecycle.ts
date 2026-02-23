@@ -18,6 +18,7 @@ import {
   createWalletClient,
   http,
   encodeFunctionData,
+  parseSignature,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { useVaultStore } from "../store/vaultStore";
@@ -26,6 +27,7 @@ import type { GhostEntry } from "../store/ghostAddressStore";
 import { getConfigForChain } from "../contracts/contract-config";
 import { secp256k1 } from "@noble/curves/secp256k1";
 import { getRpcUrl } from "./chain";
+import { deriveGasTankEphemeralKey } from "./stealth";
 import { STEALTH_ANNOUNCER_ABI, SCHEME_ID_SECP256K1 } from "./contracts";
 
 // -----------------------------------------------------------------------------
@@ -808,6 +810,205 @@ export async function executeTokenWithdrawal(
 }
 
 // -----------------------------------------------------------------------------
+// EIP-2612 permit: check support and gasless sweep via gas tank
+// -----------------------------------------------------------------------------
+
+const ERC20_PERMIT_ABI = [
+  {
+    type: "function",
+    name: "nonces",
+    inputs: [{ name: "owner", type: "address", internalType: "address" }],
+    outputs: [{ name: "", type: "uint256", internalType: "uint256" }],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "name",
+    inputs: [],
+    outputs: [{ name: "", type: "string", internalType: "string" }],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "permit",
+    inputs: [
+      { name: "owner", type: "address", internalType: "address" },
+      { name: "spender", type: "address", internalType: "address" },
+      { name: "value", type: "uint256", internalType: "uint256" },
+      { name: "deadline", type: "uint256", internalType: "uint256" },
+      { name: "v", type: "uint8", internalType: "uint8" },
+      { name: "r", type: "bytes32", internalType: "bytes32" },
+      { name: "s", type: "bytes32", internalType: "bytes32" },
+    ],
+    outputs: [],
+    stateMutability: "nonpayable",
+  },
+  {
+    type: "function",
+    name: "transferFrom",
+    inputs: [
+      { name: "from", type: "address", internalType: "address" },
+      { name: "to", type: "address", internalType: "address" },
+      { name: "amount", type: "uint256", internalType: "uint256" },
+    ],
+    outputs: [{ name: "", type: "bool", internalType: "bool" }],
+    stateMutability: "nonpayable",
+  },
+  {
+    type: "function",
+    name: "balanceOf",
+    inputs: [{ name: "account", type: "address", internalType: "address" }],
+    outputs: [{ name: "", type: "uint256", internalType: "uint256" }],
+    stateMutability: "view",
+  },
+] as const;
+
+/**
+ * Returns true if the token contract supports EIP-2612 permit (e.g. nonces(address)).
+ */
+export async function tokenSupportsPermit(
+  publicClient: PublicClient,
+  tokenAddress: Address
+): Promise<boolean> {
+  try {
+    await publicClient.readContract({
+      address: tokenAddress,
+      abi: ERC20_PERMIT_ABI,
+      functionName: "nonces",
+      args: ["0x0000000000000000000000000000000000000000" as Address],
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Check if the gas tank has enough native balance to pay for permit + transferFrom.
+ * We do not use estimateGas for permit (it would revert: we don't have a real signature here)
+ * or for transferFrom (allowance not set yet in simulation). Use conservative fixed gas instead.
+ */
+export async function checkGasTankSufficientForPermitSweep(
+  publicClient: PublicClient,
+  gasTankAddress: Address,
+  _tokenAddress: Address,
+  _amount: bigint,
+  _stealthOwner: Address,
+  _destination: Address
+): Promise<{ sufficient: boolean; balanceWei: bigint; estimatedGasWei: bigint }> {
+  const balanceWei = await publicClient.getBalance({ address: gasTankAddress });
+  // Conservative upper bound: permit ~45–65k, transferFrom ~50–65k on most chains
+  const gasPermit = 80_000n;
+  const gasTransfer = 80_000n;
+  const gasPrice = await getGasPriceWei(publicClient);
+  const estimatedGasWei = (gasPermit + gasTransfer) * gasPrice;
+  return { sufficient: balanceWei >= estimatedGasWei, balanceWei, estimatedGasWei };
+}
+
+/**
+ * Gasless ERC20 sweep: stealth signs EIP-712 permit, gas tank submits permit() then transferFrom().
+ */
+export async function executeTokenWithdrawalViaPermit(
+  stealthPrivKey: Hex,
+  tokenAddress: Address,
+  destinationAddress: Address,
+  gasTankPrivKey: Hex,
+  publicClient: PublicClient,
+  onStatus?: WithdrawalStatusCallback
+): Promise<Hash> {
+  const report = (tag: WithdrawalStepTag, label: string, detail?: string) => {
+    onStatus?.({ tag, label, detail });
+  };
+  const stealthKey = stealthPrivKey.startsWith("0x") ? stealthPrivKey : (`0x${stealthPrivKey}` as Hex);
+  const stealthAccount = privateKeyToAccount(stealthKey);
+  const tankKey = gasTankPrivKey.startsWith("0x") ? gasTankPrivKey : (`0x${gasTankPrivKey}` as Hex);
+  const tankAccount = privateKeyToAccount(tankKey);
+
+  const chain = publicClient.chain;
+  const chainId = chain?.id ?? 0;
+  const rpcUrl = chain ? getRpcUrl(chain) : undefined;
+  if (!rpcUrl) throw new Error("Cannot send transaction: no RPC URL");
+
+  report("CALC", "Reading token balance and nonce…");
+  const [balance, nonce, tokenName] = await Promise.all([
+    publicClient.readContract({ address: tokenAddress, abi: ERC20_PERMIT_ABI, functionName: "balanceOf", args: [stealthAccount.address] }),
+    publicClient.readContract({ address: tokenAddress, abi: ERC20_PERMIT_ABI, functionName: "nonces", args: [stealthAccount.address] }),
+    publicClient.readContract({ address: tokenAddress, abi: ERC20_PERMIT_ABI, functionName: "name", args: [] }),
+  ]);
+  if (balance === 0n) throw new Error("Zero token balance.");
+
+  const deadline = BigInt(Math.floor(Date.now() / 1000) + 3600);
+  const domain = {
+    name: tokenName as string,
+    version: "1",
+    chainId,
+    verifyingContract: tokenAddress,
+  };
+  const types = {
+    Permit: [
+      { name: "owner", type: "address" },
+      { name: "spender", type: "address" },
+      { name: "value", type: "uint256" },
+      { name: "nonce", type: "uint256" },
+      { name: "deadline", type: "uint256" },
+    ],
+  };
+  const message = {
+    owner: stealthAccount.address,
+    spender: tankAccount.address,
+    value: balance,
+    nonce,
+    deadline,
+  };
+
+  report("SIGN", "Signing EIP-712 permit with stealth key…");
+  const signature = await stealthAccount.signTypedData({
+    domain,
+    types,
+    primaryType: "Permit",
+    message,
+  });
+
+  const { r, s, yParity } = parseSignature(signature);
+  const vByte = yParity === 1 ? 28 : 27;
+
+  const walletClient = createWalletClient({
+    account: tankAccount,
+    chain: chain ?? undefined,
+    transport: http(rpcUrl),
+  });
+
+  report("SEND", "Submitting permit…");
+  const permitHash = await walletClient.sendTransaction({
+    account: tankAccount,
+    chain: chain ?? undefined,
+    to: tokenAddress,
+    data: encodeFunctionData({
+      abi: ERC20_PERMIT_ABI,
+      functionName: "permit",
+      args: [stealthAccount.address, tankAccount.address, balance, deadline, vByte, r, s],
+    }),
+  });
+
+  report("SEND", "Waiting for permit to confirm…");
+  await publicClient.waitForTransactionReceipt({ hash: permitHash });
+
+  report("SEND", "Submitting transferFrom…");
+  const hash = await walletClient.sendTransaction({
+    account: tankAccount,
+    chain: chain ?? undefined,
+    to: tokenAddress,
+    data: encodeFunctionData({
+      abi: ERC20_PERMIT_ABI,
+      functionName: "transferFrom",
+      args: [stealthAccount.address, destinationAddress, balance],
+    }),
+  });
+  report("DONE", "Token transfer sent (gasless).", hash);
+  return hash;
+}
+
+// -----------------------------------------------------------------------------
 // Ghost address withdrawal: match entry, derive key (p = k + hash(S)), execute, cleanup
 // -----------------------------------------------------------------------------
 
@@ -859,9 +1060,36 @@ export type WithdrawFromGhostAsset =
   | { type: "token"; tokenAddress: Address };
 
 /**
+ * Derive the gas tank private key and address from master keys and meta-address.
+ * The tank is a deterministic stealth address (same every time for this user on this device).
+ * Used to pay gas for ERC20 permit sweeps and to show tank balance.
+ */
+export function getGasTankAccount(
+  wasm: StealthLifecycleWasm,
+  masterKeys: MasterKeys,
+  metaAddressHex: Hex
+): { address: Address; privateKey: Hex } {
+  const ephemeralPriv = deriveGasTankEphemeralKey(metaAddressHex);
+  const ephemeralPubKey = secp256k1.getPublicKey(ephemeralPriv, true);
+  const tankPrivKeyBytes = wasm.reconstruct_signing_key_wasm(
+    masterKeys.spendPrivKey,
+    masterKeys.viewPrivKey,
+    ephemeralPubKey
+  );
+  const hexKey =
+    ("0x" +
+      Array.from(tankPrivKeyBytes)
+        .map((b) => b.toString(16).padStart(2, "0"))
+        .join("")) as Hex;
+  const account = privateKeyToAccount(hexKey);
+  return { address: account.address, privateKey: hexKey };
+}
+
+/**
  * Withdraw from a ghost address: find entry by stealthAddress + chainId,
  * derive stealth private key, execute sweep (ETH or ERC20 with gas deduction),
- * then remove the entry from opaque-ghost-addresses.
+ * or gasless ERC20 via permit when gasTankPrivKey is provided.
+ * Then remove the entry from opaque-ghost-addresses.
  */
 export async function withdrawFromGhostAddress(
   stealthAddress: Address,
@@ -871,7 +1099,8 @@ export async function withdrawFromGhostAddress(
   publicClient: PublicClient,
   getMasterKeys: () => MasterKeys,
   wasm: StealthLifecycleWasm,
-  onStatus?: WithdrawalStatusCallback
+  onStatus?: WithdrawalStatusCallback,
+  gasTankPrivKey?: Hex
 ): Promise<Hash> {
   const entry = useGhostAddressStore.getState().getEntry(stealthAddress, chainId);
   if (!entry) {
@@ -890,6 +1119,15 @@ export async function withdrawFromGhostAddress(
     hash = await executeStealthWithdrawal(
       stealthPrivKey,
       destinationAddress,
+      publicClient,
+      onStatus
+    );
+  } else if (gasTankPrivKey) {
+    hash = await executeTokenWithdrawalViaPermit(
+      stealthPrivKey,
+      asset.tokenAddress,
+      destinationAddress,
+      gasTankPrivKey,
       publicClient,
       onStatus
     );

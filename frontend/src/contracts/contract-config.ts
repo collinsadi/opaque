@@ -112,10 +112,6 @@ const PASEO_CHAIN_ID = 420420417;
  * and falls back to chunked RPC on failure.
  */
 export function getSubgraphUrl(chainId: number | null | undefined): string | null {
-
-  console.log("chainId", chainId);
-  console.log("VITE_POLKADOT_SUBGRAPH_URL", import.meta.env.VITE_POLKADOT_SUBGRAPH_URL);
-  console.log("VITE_SUBGRAPH_URL", import.meta.env.VITE_SUBGRAPH_URL);
   if (chainId == null) return null;
   const isPolkadotNetwork = chainId === PASEO_CHAIN_ID;
   const polkadotSubgraphUrl = isPolkadotNetwork

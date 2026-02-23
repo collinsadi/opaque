@@ -4,6 +4,14 @@ import { ExplorerLink } from "./ExplorerLink";
 import { getChain } from "../lib/chain";
 import { isChainSupported } from "../contracts/contract-config";
 import { SwitchNetworkModal } from "./SwitchNetworkModal";
+import { GasTankModal } from "./GasTankModal";
+import { GasTankBalanceModal } from "./GasTankBalanceModal";
+import { useGasTankStore } from "../store/gasTankStore";
+import { useKeys } from "../context/KeysContext";
+import { useOpaqueWasm } from "../hooks/useOpaqueWasm";
+import { getGasTankAccount } from "../lib/stealthLifecycle";
+import { createPublicClient, http } from "viem";
+import { getRpcUrl } from "../lib/chain";
 
 type DashboardViewProps = {
   onNavigate: (t: Tab) => void;
@@ -13,7 +21,49 @@ type DashboardViewProps = {
 
 export function DashboardView({ onNavigate, address, chainId }: DashboardViewProps) {
   const [showSwitchModal, setShowSwitchModal] = useState(false);
+  const [showGasTankModal, setShowGasTankModal] = useState(false);
+  const [gasTankModalMode, setGasTankModalMode] = useState<"intro" | "initialized">("intro");
+  const [gasTankInitializing, setGasTankInitializing] = useState(false);
+  const [showGasTankBalanceModal, setShowGasTankBalanceModal] = useState(false);
+  const [tankBalanceWei, setTankBalanceWei] = useState<bigint>(0n);
+
   const canChangeNetwork = chainId != null && isChainSupported(chainId);
+  const { initialized: gasTankInitialized, tankAddress: gasTankAddress, setInitialized: setGasTankInitialized } = useGasTankStore();
+  const { isSetup, stealthMetaAddressHex, getMasterKeys } = useKeys();
+  const { wasm, isReady: _wasmReady } = useOpaqueWasm();
+
+  const handleGasTankClick = () => {
+    if (!gasTankInitialized) {
+      setGasTankModalMode("intro");
+      setShowGasTankModal(true);
+    } else {
+      if (chainId != null && gasTankAddress) {
+        const chain = getChain(chainId);
+        const rpcUrl = getRpcUrl(chain);
+        if (rpcUrl) {
+          const client = createPublicClient({ chain, transport: http(rpcUrl) });
+          client.getBalance({ address: gasTankAddress }).then(setTankBalanceWei).catch(() => setTankBalanceWei(0n));
+        }
+      }
+      setShowGasTankBalanceModal(true);
+    }
+  };
+
+  const handleInitializeTank = () => {
+    if (!wasm || !stealthMetaAddressHex || !isSetup) return;
+    setGasTankInitializing(true);
+    try {
+      const masterKeys = getMasterKeys();
+      const { address: tankAddr } = getGasTankAccount(wasm, masterKeys, stealthMetaAddressHex);
+      setGasTankInitialized(tankAddr);
+      setGasTankModalMode("initialized");
+    } catch (e) {
+      console.error("[Opaque] Gas tank init failed", e);
+      setGasTankInitializing(false);
+      return;
+    }
+    setGasTankInitializing(false);
+  };
 
   return (
     <div className="w-full max-w-2xl mx-auto">
@@ -59,6 +109,17 @@ export function DashboardView({ onNavigate, address, chainId }: DashboardViewPro
           <span className="text-lg font-semibold text-white">Receive</span>
           <span className="text-xs text-neutral-500 mt-1">Payment link or ghost address</span>
         </button>
+        <button
+          type="button"
+          onClick={handleGasTankClick}
+          className="card flex flex-col items-center justify-center min-h-[140px] hover:border-neutral-600 transition-colors"
+        >
+          <span className="text-3xl mb-2" aria-hidden>⛽</span>
+          <span className="text-lg font-semibold text-white">Gas Tank</span>
+          <span className="text-xs text-neutral-500 mt-1">
+            {gasTankInitialized ? "View balance" : "Fund gas for ERC20 sweeps"}
+          </span>
+        </button>
       </div>
 
       <div className="mt-8 flex flex-wrap gap-2">
@@ -96,6 +157,26 @@ export function DashboardView({ onNavigate, address, chainId }: DashboardViewPro
             />
           </div>
         </div>
+      )}
+
+      {showGasTankModal && (
+        <GasTankModal
+          mode={gasTankModalMode}
+          tankAddress={gasTankAddress}
+          chainId={chainId}
+          onInitialize={handleInitializeTank}
+          onClose={() => { setShowGasTankModal(false); setGasTankModalMode("intro"); }}
+          initializing={gasTankInitializing}
+        />
+      )}
+
+      {showGasTankBalanceModal && gasTankAddress && (
+        <GasTankBalanceModal
+          tankAddress={gasTankAddress}
+          balanceWei={tankBalanceWei}
+          chainId={chainId}
+          onClose={() => setShowGasTankBalanceModal(false)}
+        />
       )}
     </div>
   );

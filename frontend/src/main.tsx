@@ -11,6 +11,7 @@ import { DisclaimerPage } from "./components/DisclaimerPage.tsx";
 import { PayPage } from "./components/PayPage.tsx";
 import { PaySuccessPage } from "./components/PaySuccessPage.tsx";
 import { FaucetPage } from "./components/FaucetPage.tsx";
+import { GasTankPage } from "./components/GasTankPage.tsx";
 import { SUPPORTED_CHAIN_IDS } from "./contracts/contract-config.ts";
 
 console.log("🚀 [Opaque] App bootstrapping…");
@@ -54,6 +55,7 @@ createRoot(document.getElementById("root")!).render(
         <Route path="/pay/success" element={<PaySuccessPage />} />
         <Route path="/pay/:identifier" element={<KeysProvider><PayPage /></KeysProvider>} />
         <Route path="/faucet" element={<FaucetPage />} />
+        <Route path="/gas-tank" element={<GasTankPage />} />
         <Route path="*" element={<NotFoundPage />} />
       </Routes>
     </BrowserRouter>

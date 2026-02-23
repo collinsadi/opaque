@@ -21,6 +21,7 @@ import { useWallet } from "./hooks/useWallet";
 import { useRegistrationStatus } from "./hooks/useRegistrationStatus";
 import { useVaultStore } from "./store/vaultStore";
 import { useGhostAddressStore, useGhostAddressPersistence } from "./store/ghostAddressStore";
+import { useGasTankStore } from "./store/gasTankStore";
 import { getExplorerTxUrl } from "./lib/explorer";
 
 function AppContent() {
@@ -83,6 +84,7 @@ function AppContent() {
   const handleDisconnect = () => {
     clearKeys();
     clearVault();
+    useGasTankStore.getState().clear();
     disconnect();
     setTab("dashboard");
   };
