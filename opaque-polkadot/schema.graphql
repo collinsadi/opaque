@@ -1,11 +1,13 @@
+# Announcement entity: raw hex data needed for stealth derivation.
+# id is transaction hash (txHash) for compatibility; uniqueness is txHash + logIndex.
 type Announcement @entity(immutable: true) {
-  id: Bytes!
-  schemeId: BigInt! # uint256
-  stealthAddress: Bytes! # address
-  caller: Bytes! # address
-  ephemeralPubKey: Bytes! # bytes
-  metadata: Bytes! # bytes
+  id: ID!
+  etherealPublicKey: Bytes!
+  viewTag: Int!
+  metadata: Bytes!
   blockNumber: BigInt!
-  blockTimestamp: BigInt!
+  timestamp: BigInt!
   transactionHash: Bytes!
+  logIndex: Int!
+  stealthAddress: Bytes!
 }
