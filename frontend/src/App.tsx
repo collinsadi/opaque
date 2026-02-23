@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { KeysProvider, useKeys } from "./context/KeysContext";
 import { hasCompletedOnboardingTour, runOnboardingTour } from "./lib/onboardingTour";
 import { ProtocolLogProvider } from "./context/ProtocolLogContext";
@@ -26,6 +27,8 @@ function AppContent() {
   const [tab, setTab] = useState<Tab>("dashboard");
   const [onboardingPhase, setOnboardingPhase] = useState<"landing" | "entry">("landing");
   const [registrationJustCompleted, setRegistrationJustCompleted] = useState(false);
+  const location = useLocation();
+  const navigate = useNavigate();
   useKeys();
   const { isConnected, address, chainId, isConnecting, connect, disconnect } = useWallet();
   const { isSetup, clearKeys } = useKeys();
@@ -37,6 +40,13 @@ function AppContent() {
   useEffect(() => {
     useGhostAddressStore.getState().sanitizeGhostAddresses();
   }, []);
+
+  useEffect(() => {
+    if (location.pathname === "/" && (location.state as { tab?: Tab } | null)?.tab === "dashboard") {
+      setTab("dashboard");
+      navigate("/", { replace: true, state: {} });
+    }
+  }, [location.pathname, location.state, navigate]);
 
   useEffect(() => {
     setRegistrationJustCompleted(false);

@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, type ReactNode } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate, useLocation } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { Footer } from "./Footer";
 import { AddressDisplay } from "./AddressDisplay";
@@ -35,6 +35,8 @@ function DesktopNav({
 >) {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const navigate = useNavigate();
+  const location = useLocation();
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -50,13 +52,23 @@ function DesktopNav({
     <header className="shrink-0 border-b border-border bg-black">
       <div className="max-w-5xl mx-auto px-6 h-14 flex items-center justify-between">
         <div className="flex items-center gap-8">
-          <Link
-            to="/"
-            onClick={() => onTabChange("dashboard")}
-            className="text-sm font-semibold tracking-tight text-white hover:text-neutral-300 transition-colors"
-          >
-            Opaque
-          </Link>
+          {location.pathname === "/" ? (
+            <Link
+              to="/"
+              onClick={() => onTabChange("dashboard")}
+              className="text-sm font-semibold tracking-tight text-white hover:text-neutral-300 transition-colors"
+            >
+              Opaque
+            </Link>
+          ) : (
+            <button
+              type="button"
+              onClick={() => navigate("/", { state: { tab: "dashboard" } })}
+              className="text-sm font-semibold tracking-tight text-white hover:text-neutral-300 transition-colors"
+            >
+              Opaque
+            </button>
+          )}
           <Link
             to="/faucet"
             className="text-sm text-neutral-500 hover:text-neutral-300 transition-colors"
