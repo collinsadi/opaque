@@ -15,6 +15,7 @@ import {
   getAnnouncementsForChain,
   getSyncState,
   setSyncState,
+  clearSyncState,
   putAnnouncements,
   clearChainCache,
   announcementId,
@@ -364,7 +365,12 @@ export function useScanner(opts: UseScannerOptions): UseScannerResult {
 
   const runScan = useCallback(
     async (clearCache: boolean) => {
+      console.log("runScan", chainId);
+      console.log("publicClient", publicClient);
+      console.log("announcerAddress", announcerAddress);
+      console.log("enabled", enabled);
       if (chainId == null || !publicClient || !announcerAddress || !enabled) return;
+
 
       const startBlock = getStartBlock(chainId);
       const subgraphUrl = getSubgraphUrl(chainId);
@@ -492,9 +498,18 @@ export function useScanner(opts: UseScannerOptions): UseScannerResult {
 
   useEffect(() => {
     if (!enabled || chainId == null || !publicClient || !announcerAddress) {
+      console.log("[useScanner] effect skip (guard):", {
+        chainId,
+        enabled,
+        hasPublicClient: !!publicClient,
+        hasAnnouncerAddress: !!announcerAddress,
+      });
       setProgress((p) => ({ ...p, phase: "idle" }));
       return;
     }
+
+    // Resolve subgraph URL so it's called for every supported chain (e.g. Paseo), not only when runScan runs
+    // getSubgraphUrl(chainId);
 
     let cancelled = false;
     setProgress((p) => ({ ...p, phase: "loading-cache", message: "Loading cache…" }));
@@ -512,16 +527,13 @@ export function useScanner(opts: UseScannerOptions): UseScannerResult {
         lastScanned == null ? startBlock : BigInt(Math.max(lastScanned + 1, Number(startBlock)));
 
       if (fromBlock > toBlock) {
-        setProgress({
-          phase: "done",
-          percent: 100,
-          message: "Up to date",
-          fromBlock,
-          toBlock,
-          currentBlock: toBlock,
-          error: null,
+        // lastScannedBlock is ahead of chain head (corrupt or from wrong source); reset sync state and run scan from startBlock
+        console.warn("[useScanner] lastScannedBlock ahead of chain head, resetting sync state:", {
+          chainId,
+          fromBlock: String(fromBlock),
+          toBlock: String(toBlock),
         });
-        return;
+        await clearSyncState(chainId);
       }
 
       await runScan(false);

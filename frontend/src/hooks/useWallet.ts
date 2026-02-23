@@ -36,6 +36,7 @@ export function useWallet() {
       if (accounts.length > 0) {
         const hexChainId = await ethereum.request({ method: "eth_chainId" });
         chainId = typeof hexChainId === "string" ? parseInt(hexChainId, 16) : null;
+        console.log("[useWallet] chainId gotten (checkConnection):", chainId);
         setState({
           isConnected: true,
           address: accounts[0],
@@ -79,6 +80,7 @@ export function useWallet() {
       if (accounts.length > 0) {
         const hexChainId = await ethereum.request({ method: "eth_chainId" });
         const chainId = typeof hexChainId === "string" ? parseInt(hexChainId, 16) : null;
+        console.log("[useWallet] chainId gotten (connect):", chainId);
         setState({
           isConnected: true,
           address: accounts[0],
@@ -142,6 +144,7 @@ export function useWallet() {
       const handleChainChanged = (hexChainId?: string) => {
         const chainId =
           typeof hexChainId === "string" ? parseInt(hexChainId, 16) : null;
+        console.log("[useWallet] chainId gotten (chainChanged):", chainId);
         setState((prev) => ({
           ...prev,
           chainId,

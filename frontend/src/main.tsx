@@ -11,14 +11,11 @@ import { DisclaimerPage } from "./components/DisclaimerPage.tsx";
 import { PayPage } from "./components/PayPage.tsx";
 import { PaySuccessPage } from "./components/PaySuccessPage.tsx";
 import { FaucetPage } from "./components/FaucetPage.tsx";
+import { SUPPORTED_CHAIN_IDS } from "./contracts/contract-config.ts";
 
 console.log("🚀 [Opaque] App bootstrapping…");
 
-const expectedChainId = import.meta.env.VITE_CHAIN_ID
-  ? Number(import.meta.env.VITE_CHAIN_ID)
-  : import.meta.env.VITE_NETWORK === 'localhost'
-    ? 31337
-    : null
+const expectedChainId: number[] = [...SUPPORTED_CHAIN_IDS];
 
 if (expectedChainId != null) {
   const checkNetwork = () => {
@@ -28,7 +25,7 @@ if (expectedChainId != null) {
       .request({ method: 'eth_chainId' })
       .then((hexChainId: string) => {
         const connectedChainId = Number.parseInt(hexChainId, 16)
-        if (connectedChainId !== expectedChainId) {
+        if (!expectedChainId.includes(connectedChainId)) {
           console.warn(
             "⚠️ [Opaque] Wrong network:",
             { expected: expectedChainId, got: connectedChainId, env: import.meta.env.VITE_NETWORK ?? "config" }

@@ -102,17 +102,31 @@ export function isChainSupported(chainId: number | null | undefined): boolean {
   return chainId != null && chainId in MULTICHAIN_CONFIG;
 }
 
-/** Paseo (Polkadot Hub testnet) chain ID – uses VITE_POLKADOT_SUBGRAPH_URL when set. */
+/** Paseo (Polkadot Hub testnet) chain ID. Private balance page uses Polkadot subgraph when on this network. */
 const PASEO_CHAIN_ID = 420420417;
 
-/** Subgraph URL for announcement indexer (e.g. The Graph). When set, scanner uses indexer first and falls back to chunked RPC on failure. For Paseo, uses VITE_POLKADOT_SUBGRAPH_URL when set. */
+/**
+ * Subgraph URL for the announcement indexer (e.g. The Graph).
+ * Used by the private balance page via useScanner: when the network is Polkadot (Paseo, chainId 420420417),
+ * returns VITE_POLKADOT_SUBGRAPH_URL; otherwise VITE_SUBGRAPH_URL. When set, scanner uses indexer first
+ * and falls back to chunked RPC on failure.
+ */
 export function getSubgraphUrl(chainId: number | null | undefined): string | null {
+
+  console.log("chainId", chainId);
+  console.log("VITE_POLKADOT_SUBGRAPH_URL", import.meta.env.VITE_POLKADOT_SUBGRAPH_URL);
+  console.log("VITE_SUBGRAPH_URL", import.meta.env.VITE_SUBGRAPH_URL);
   if (chainId == null) return null;
-  const polkadotUrl =
-    chainId === PASEO_CHAIN_ID
-      ? (import.meta.env.VITE_POLKADOT_SUBGRAPH_URL as string | undefined)
-      : undefined;
-  const fromEnv = (polkadotUrl ?? import.meta.env.VITE_SUBGRAPH_URL) as string | undefined;
+  const isPolkadotNetwork = chainId === PASEO_CHAIN_ID;
+  const polkadotSubgraphUrl = isPolkadotNetwork
+    ? (import.meta.env.VITE_POLKADOT_SUBGRAPH_URL as string | undefined)
+    : undefined;
+  if (isPolkadotNetwork && (!polkadotSubgraphUrl || !String(polkadotSubgraphUrl).trim())) {
+    console.warn(
+      "[Opaque] Polkadot network detected but VITE_POLKADOT_SUBGRAPH_URL is not set. Set it in .env to use the indexer on the private balance page."
+    );
+  }
+  const fromEnv = (polkadotSubgraphUrl ?? import.meta.env.VITE_SUBGRAPH_URL) as string | undefined;
   if (fromEnv && fromEnv.trim().length > 0) return fromEnv.trim();
   return null;
 }

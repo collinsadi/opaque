@@ -127,6 +127,12 @@ export async function setSyncState(chainId: number, lastScannedBlock: number): P
   await db.put("syncState", { chainId, lastScannedBlock });
 }
 
+/** Clear only sync state for a chain (e.g. when lastScannedBlock is ahead of chain head) */
+export async function clearSyncState(chainId: number): Promise<void> {
+  const db = await getDB();
+  await db.delete("syncState", chainId);
+}
+
 /** Clear all cached announcements and sync state for a chain (e.g. Retry Sync) */
 export async function clearChainCache(chainId: number): Promise<void> {
   const db = await getDB();
