@@ -1,6 +1,6 @@
 # Opaque Cash
 
-**[Visit Website](https://opaque.cash)**
+**[Visit Website](https://opaque.cash)** · **[Registry Contract on Polkadot Testnet](https://blockscout-testnet.polkadot.io/address/0x6b37BD0Fc564dc353989B6A5E9c50b2fb68FB2a0?tab=txs)** · **[Announcer Contract on Polkadot](https://blockscout-testnet.polkadot.io/address/0xD5FDa624D5F58F4586A959ff3e9c7CA72a9b74D8?tab=txs)**
 
 **Opaque Cash** is a stealth-address wallet and privacy protocol. See [DISCLAIMER.md](DISCLAIMER.md) for important notes on the experimental nature of the stealth address cryptography and local storage usage. built on **EIP-5564** (Stealth Addresses) and a **Stealth Meta-Address Registry**. Users receive ETH and ERC-20 tokens at one-time stealth addresses derived from a single meta-address; senders can target recipients by meta-address or by standard Ethereum address (resolved via the Registry).
 
