@@ -4,7 +4,6 @@
 
 import { useState, useCallback } from "react";
 import { Link } from "react-router-dom";
-import { ExplorerLink } from "./ExplorerLink";
 import { getExplorerAddressUrl } from "../lib/explorer";
 import { getChain } from "../lib/chain";
 
