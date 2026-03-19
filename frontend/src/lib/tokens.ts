@@ -37,7 +37,7 @@ const ERC20_BALANCE_ABI = [
 
 /**
  * Get tokens config for a chain from MULTICHAIN_CONFIG. Only tokens listed for that chain are returned.
- * Native token uses the chain's nativeCurrency (e.g. PAS on Paseo, ETH on Ethereum).
+ * Native token uses the chain's nativeCurrency (e.g. ETH on Sepolia).
  */
 export function getTokensForChain(chainId: number): ChainTokens {
   const chain = getChain(chainId);

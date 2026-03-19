@@ -7,7 +7,7 @@ export function GasTankPage() {
       <section>
         <h2 className="text-white font-medium text-base mb-2">What is the Gas Tank?</h2>
         <p>
-          The Gas Tank is a stealth address generated specifically for you to hold native tokens (ETH, PAS, etc.) used only to pay network fees when sweeping ERC20 tokens that support EIP-2612 permit.
+          The Gas Tank is a stealth address generated specifically for you to hold native Sepolia ETH used only to pay network fees when sweeping ERC20 tokens that support EIP-2612 permit.
         </p>
       </section>
 

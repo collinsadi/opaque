@@ -27,7 +27,7 @@ export function NetworkGuard({ children }: NetworkGuardProps) {
         <div className="max-w-md w-full" onClick={(e) => e.stopPropagation()}>
           <SwitchNetworkModal
             title="Unsupported network"
-            description="Opaque supports Sepolia and Paseo (Polkadot Hub testnet). Switch to one of these networks to continue."
+            description="Opaque supports Sepolia (chain 11155111) only. Switch to Sepolia to continue."
           />
         </div>
       </div>

@@ -151,7 +151,7 @@ export function DashboardView({ onNavigate, address, chainId }: DashboardViewPro
           <div className="max-w-md w-full" onClick={(e) => e.stopPropagation()}>
             <SwitchNetworkModal
               title="Change network"
-              description="Choose Sepolia or Paseo. Your balance, history, and registration are per network and will refresh."
+              description="Use Sepolia. Your balance, history, and registration are per network and will refresh."
               showClose
               onClose={() => setShowSwitchModal(false)}
             />

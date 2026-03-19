@@ -508,7 +508,7 @@ export function useScanner(opts: UseScannerOptions): UseScannerResult {
       return;
     }
 
-    // Resolve subgraph URL so it's called for every supported chain (e.g. Paseo), not only when runScan runs
+    // Resolve subgraph URL for the current supported chain
     // getSubgraphUrl(chainId);
 
     let cancelled = false;
@@ -568,7 +568,7 @@ export function useScanner(opts: UseScannerOptions): UseScannerResult {
       setGhostTokenBalances({});
       return;
     }
-    // Only use stored entries for current chain (ignores 31337 when wallet is on Sepolia)
+    // Only use stored entries for current chain
     const stored = getStoredGhostEntries().filter((e) => e.chainId === chainId);
     const storedAddresses = stored.map((e) => e.stealthAddress as `0x${string}`);
     const combined: `0x${string}`[] = [...watchlistAddresses, ...ghostAddresses, ...storedAddresses];

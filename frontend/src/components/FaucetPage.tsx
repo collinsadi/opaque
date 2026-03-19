@@ -129,7 +129,7 @@ export function FaucetPage() {
           <div className="card border-amber-500/30 bg-amber-500/5 mb-8">
             <h2 className="text-lg font-semibold text-amber-200 mb-2">Switch network</h2>
             <p className="text-neutral-400 text-sm mb-4">
-              The faucet is available on Sepolia and Paseo (Polkadot Hub testnet). Switch to one of these networks to claim mock tokens.
+              The faucet is available on Sepolia only. Switch to Sepolia to claim mock tokens.
             </p>
             <button
               type="button"
@@ -148,7 +148,7 @@ export function FaucetPage() {
                 <div className="max-w-md w-full" onClick={(e) => e.stopPropagation()}>
                   <SwitchNetworkModal
                     title="Switch network"
-                    description="Choose Sepolia or Paseo to use the faucet."
+                    description="Switch to Sepolia to use the faucet."
                     showClose
                     onClose={() => setShowSwitchModal(false)}
                   />
@@ -232,7 +232,7 @@ export function FaucetPage() {
             ) : isConnected && supported && !hasMockTokens && (
               <div className="card border-neutral-700 mb-8">
                 <p className="text-neutral-400 text-sm">
-                  Mock token faucet is not deployed on this network. Switch to Sepolia or Paseo to claim.
+                  Mock token faucet is not deployed on this network. Switch to Sepolia to claim.
                 </p>
               </div>
             )}

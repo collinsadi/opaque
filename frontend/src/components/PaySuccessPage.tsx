@@ -18,7 +18,7 @@ export function PaySuccessPage() {
   const navigate = useNavigate();
   const txHash = searchParams.get("tx")?.trim() || null;
   const chainIdParam = searchParams.get("chainId");
-  const appChainId = import.meta.env.VITE_CHAIN_ID ? Number(import.meta.env.VITE_CHAIN_ID) : 31337;
+  const appChainId = import.meta.env.VITE_CHAIN_ID ? Number(import.meta.env.VITE_CHAIN_ID) : 11155111;
   const chainId = chainIdParam ? Number(chainIdParam) : appChainId;
   const explorerUrl = getExplorerTxUrl(chainId, txHash);
 

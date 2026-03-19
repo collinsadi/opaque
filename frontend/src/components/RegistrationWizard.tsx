@@ -60,7 +60,7 @@ export function RegistrationWizard({ onComplete }: RegistrationWizardProps) {
     try {
       const ethereum = (window as unknown as { ethereum?: EIP1193Provider }).ethereum;
       const client = createWalletClient({
-        chain: chainId != null ? getChain(chainId) : getChain(31337),
+        chain: chainId != null ? getChain(chainId) : getChain(11155111),
         transport: custom(ethereum as EIP1193Provider),
       });
       const [acc] = await client.requestAddresses();
@@ -222,7 +222,7 @@ export function RegistrationWizard({ onComplete }: RegistrationWizardProps) {
                 {wrongNetwork && (
                   <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 space-y-2">
                     <p className="text-sm text-amber-200">
-                      Wrong network: registration is available on Sepolia and Paseo (Polkadot Hub testnet) only.
+                      Wrong network: registration is available on Sepolia (11155111) only.
                     </p>
                     <button
                       type="button"
@@ -241,7 +241,7 @@ export function RegistrationWizard({ onComplete }: RegistrationWizardProps) {
                         <div className="max-w-md w-full" onClick={(e) => e.stopPropagation()}>
                           <SwitchNetworkModal
                             title="Switch network"
-                            description="Choose Sepolia or Paseo to register your stealth meta-address."
+                            description="Switch to Sepolia to register your stealth meta-address."
                             showClose
                             onClose={() => setShowSwitchModal(false)}
                           />

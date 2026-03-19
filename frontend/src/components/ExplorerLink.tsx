@@ -20,7 +20,7 @@ const LaunchIcon = () => (
 );
 
 type ExplorerLinkProps = {
-  /** Chain ID from useWallet().chainId (dynamic: Sepolia in test, Mainnet in prod) */
+  /** Chain ID from useWallet().chainId (Sepolia-only app: expect 11155111) */
   chainId: number | null;
   /** Address (0x…) or transaction hash */
   value: string;
