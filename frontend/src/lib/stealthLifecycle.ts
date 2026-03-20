@@ -19,6 +19,7 @@ import {
   http,
   encodeFunctionData,
   parseSignature,
+  toHex,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { useVaultStore } from "../store/vaultStore";
@@ -27,7 +28,11 @@ import type { GhostEntry } from "../store/ghostAddressStore";
 import { getConfigForChain } from "../contracts/contract-config";
 import { secp256k1 } from "@noble/curves/secp256k1";
 import { getRpcUrl } from "./chain";
-import { deriveGasTankEphemeralKey } from "./stealth";
+import {
+  buildGhostAnnouncementPayload,
+  deriveAnnouncerEphemeralKey,
+  deriveGasTankEphemeralKey,
+} from "./stealth";
 import { STEALTH_ANNOUNCER_ABI, SCHEME_ID_SECP256K1 } from "./contracts";
 
 // -----------------------------------------------------------------------------
@@ -1083,6 +1088,294 @@ export function getGasTankAccount(
         .join("")) as Hex;
   const account = privateKeyToAccount(hexKey);
   return { address: account.address, privateKey: hexKey };
+}
+
+/**
+ * Deterministic "Announcer" stealth account: signs `announce()` so the connected wallet is not the on-chain caller.
+ */
+export function getAnnouncerAccount(
+  wasm: StealthLifecycleWasm,
+  masterKeys: MasterKeys,
+  metaAddressHex: Hex
+): { address: Address; privateKey: Hex } {
+  const ephemeralPriv = deriveAnnouncerEphemeralKey(metaAddressHex);
+  const ephemeralPubKey = secp256k1.getPublicKey(ephemeralPriv, true);
+  const announcerPrivKeyBytes = wasm.reconstruct_signing_key_wasm(
+    masterKeys.spendPrivKey,
+    masterKeys.viewPrivKey,
+    ephemeralPubKey
+  );
+  const hexKey =
+    ("0x" +
+      Array.from(announcerPrivKeyBytes)
+        .map((b) => b.toString(16).padStart(2, "0"))
+        .join("")) as Hex;
+  const account = privateKeyToAccount(hexKey);
+  return { address: account.address, privateKey: hexKey };
+}
+
+const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as Address;
+const GHOST_ANNOUNCE_TRANSFER_GAS = 21_000n;
+/** Fallback if RPC cannot estimate `announce` for an empty Announcer account. */
+const GHOST_ANNOUNCE_GAS_FALLBACK = 120_000n;
+
+export type GhostAnnouncementProgress = {
+  id: string;
+  label: string;
+  status: "wait" | "ok" | "done" | "error";
+  detail?: string;
+};
+
+type GhostAnnouncementPlan = {
+  normalizedGhost: Address;
+  announceData: Hex;
+  announceGasLimit: bigint;
+  maxFeePerGas: bigint;
+  eip1559Fees: { maxFeePerGas: bigint; maxPriorityFeePerGas: bigint } | null;
+  announcerAcc: { address: Address; privateKey: Hex };
+  gasTankAcc: { address: Address; privateKey: Hex };
+  topUp: bigint;
+  weiAnnouncerNeed: bigint;
+};
+
+async function planGhostOnchainAnnouncement(
+  publicClient: PublicClient,
+  wasm: StealthLifecycleWasm,
+  getMasterKeys: () => MasterKeys,
+  metaAddressHex: Hex,
+  ghostStealthAddress: Address,
+  ephemeralPrivKeyHex: Hex,
+  announcerContract: Address,
+  getNativeBalance: (address: Address) => Promise<bigint>
+): Promise<GhostAnnouncementPlan> {
+  if (!announcerContract || announcerContract === ZERO_ADDRESS) {
+    throw new Error("Stealth announcer contract is not configured for this chain.");
+  }
+  const normalizedGhost = getAddress(ghostStealthAddress);
+  const payload = buildGhostAnnouncementPayload(metaAddressHex, ephemeralPrivKeyHex);
+  if (getAddress(payload.stealthAddress) !== normalizedGhost) {
+    throw new Error("Stored ephemeral key does not match this ghost address.");
+  }
+  const masterKeys = getMasterKeys();
+  const announcerAcc = getAnnouncerAccount(wasm, masterKeys, metaAddressHex);
+  const gasTankAcc = getGasTankAccount(wasm, masterKeys, metaAddressHex);
+
+  const announceData = encodeFunctionData({
+    abi: STEALTH_ANNOUNCER_ABI,
+    functionName: "announce",
+    args: [
+      SCHEME_ID_SECP256K1,
+      normalizedGhost,
+      toHex(payload.ephemeralPubKey),
+      toHex(payload.metadata),
+    ],
+  });
+
+  type Eip1559Fees = { maxFeePerGas: bigint; maxPriorityFeePerGas: bigint };
+  let maxFeePerGas: bigint;
+  let eip1559Fees: Eip1559Fees | null = null;
+  const fees = await publicClient.estimateFeesPerGas().catch(() => null);
+  if (fees && "maxFeePerGas" in fees && fees.maxFeePerGas != null) {
+    maxFeePerGas = fees.maxFeePerGas;
+    eip1559Fees = fees as Eip1559Fees;
+  } else {
+    maxFeePerGas = await publicClient.getGasPrice();
+  }
+
+  let announceGasLimit: bigint;
+  try {
+    announceGasLimit = await publicClient.estimateGas({
+      account: announcerAcc.address,
+      to: announcerContract,
+      data: announceData,
+      value: 0n,
+    });
+  } catch {
+    announceGasLimit = GHOST_ANNOUNCE_GAS_FALLBACK;
+  }
+
+  const announceCost = announceGasLimit * maxFeePerGas;
+  const buffer = (announceCost * 15n) / 100n;
+  const weiAnnouncerNeed = announceCost + buffer;
+
+  const announcerBal = await getNativeBalance(announcerAcc.address);
+  const topUp = weiAnnouncerNeed > announcerBal ? weiAnnouncerNeed - announcerBal : 0n;
+
+  return {
+    normalizedGhost,
+    announceData,
+    announceGasLimit,
+    maxFeePerGas,
+    eip1559Fees,
+    announcerAcc,
+    gasTankAcc,
+    topUp,
+    weiAnnouncerNeed,
+  };
+}
+
+/**
+ * Minimum Gas Tank balance (wei) required so the Announcer can be topped up (if needed) and publish `announce`.
+ */
+export async function estimateMinGasTankWeiForGhostAnnouncement(
+  publicClient: PublicClient,
+  wasm: StealthLifecycleWasm,
+  getMasterKeys: () => MasterKeys,
+  metaAddressHex: Hex,
+  ghostStealthAddress: Address,
+  ephemeralPrivKeyHex: Hex,
+  announcerContract: Address,
+  getNativeBalance?: (address: Address) => Promise<bigint>
+): Promise<{ minTankWei: bigint; topUpWei: bigint; announcerAddress: Address; gasTankAddress: Address }> {
+  const readNative =
+    getNativeBalance ?? ((address: Address) => publicClient.getBalance({ address }));
+  const plan = await planGhostOnchainAnnouncement(
+    publicClient,
+    wasm,
+    getMasterKeys,
+    metaAddressHex,
+    ghostStealthAddress,
+    ephemeralPrivKeyHex,
+    announcerContract,
+    readNative
+  );
+  const transferCost = GHOST_ANNOUNCE_TRANSFER_GAS * plan.maxFeePerGas;
+  const transferBuffer = transferCost / 10n;
+  const minTankWei = plan.topUp > 0n ? plan.topUp + transferCost + transferBuffer : 0n;
+  return {
+    minTankWei,
+    topUpWei: plan.topUp,
+    announcerAddress: plan.announcerAcc.address,
+    gasTankAddress: plan.gasTankAcc.address,
+  };
+}
+
+/**
+ * Publish a retroactive ERC-5564 announcement for a manual ghost receive. The Announcer stealth signer
+ * calls the announcer contract; the Gas Tank funds the Announcer when it lacks ETH for gas.
+ */
+export async function executeGhostOnchainAnnouncement(
+  publicClient: PublicClient,
+  wasm: StealthLifecycleWasm,
+  getMasterKeys: () => MasterKeys,
+  metaAddressHex: Hex,
+  ghostStealthAddress: Address,
+  ephemeralPrivKeyHex: Hex,
+  announcerContract: Address,
+  onProgress?: (e: GhostAnnouncementProgress) => void,
+  getNativeBalance?: (address: Address) => Promise<bigint>
+): Promise<{ fundHash?: Hash; announceHash: Hash }> {
+  const report = (id: string, label: string, status: GhostAnnouncementProgress["status"], detail?: string) => {
+    onProgress?.({ id, label, status, detail });
+  };
+
+  const readNative =
+    getNativeBalance ?? ((address: Address) => publicClient.getBalance({ address }));
+
+  report("verify", "Verifying ghost address and ephemeral key…", "wait");
+  let plan: GhostAnnouncementPlan;
+  try {
+    plan = await planGhostOnchainAnnouncement(
+      publicClient,
+      wasm,
+      getMasterKeys,
+      metaAddressHex,
+      ghostStealthAddress,
+      ephemeralPrivKeyHex,
+      announcerContract,
+      readNative
+    );
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    report("verify", "Verification failed", "error", msg);
+    throw e instanceof Error ? e : new Error(msg);
+  }
+  report("verify", "Ghost address matches stored ephemeral key.", "ok");
+
+  report("announcer", "Announcer stealth signer ready (unlinked from your main wallet).", "ok", plan.announcerAcc.address);
+
+  const chain = publicClient.chain;
+  const rpcUrl = chain ? getRpcUrl(chain) : undefined;
+  if (!rpcUrl) {
+    report("rpc", "No RPC URL for this chain.", "error");
+    throw new Error("No RPC URL configured for this chain.");
+  }
+
+  const transferCost = GHOST_ANNOUNCE_TRANSFER_GAS * plan.maxFeePerGas;
+  const transferBuffer = transferCost / 10n;
+
+  report("tank", "Checking Gas Tank balance…", "wait");
+  const tankBal = await readNative(plan.gasTankAcc.address);
+  if (plan.topUp > 0n) {
+    const tankNeed = plan.topUp + transferCost + transferBuffer;
+    if (tankBal < tankNeed) {
+      report(
+        "tank",
+        "Gas Tank balance too low",
+        "error",
+        `Need about ${formatEther(tankNeed)} ETH on the Gas Tank; have ${formatEther(tankBal)} ETH. Fund the Gas Tank and try again.`
+      );
+      throw new Error(
+        `Gas Tank needs about ${formatEther(tankNeed)} ETH (currently ${formatEther(tankBal)} ETH).`
+      );
+    }
+    report("tank", `Gas Tank OK (${formatEther(tankBal)} ETH).`, "ok");
+  } else {
+    report("tank", "No Gas Tank top-up needed (Announcer already funded).", "ok", formatEther(tankBal));
+  }
+
+  const tankAccount = privateKeyToAccount(plan.gasTankAcc.privateKey);
+  const announcerAccount = privateKeyToAccount(plan.announcerAcc.privateKey);
+
+  const tankWallet = createWalletClient({
+    account: tankAccount,
+    chain: chain ?? undefined,
+    transport: http(rpcUrl),
+  });
+  const announcerWallet = createWalletClient({
+    account: announcerAccount,
+    chain: chain ?? undefined,
+    transport: http(rpcUrl),
+  });
+
+  let fundHash: Hash | undefined;
+  if (plan.topUp > 0n) {
+    report("fund", "Sending ETH from Gas Tank to Announcer…", "wait");
+    fundHash = await tankWallet.sendTransaction({
+      account: tankAccount,
+      chain: chain ?? undefined,
+      to: plan.announcerAcc.address,
+      value: plan.topUp,
+      gas: GHOST_ANNOUNCE_TRANSFER_GAS,
+      ...(plan.eip1559Fees
+        ? {
+            maxFeePerGas: plan.eip1559Fees.maxFeePerGas,
+            maxPriorityFeePerGas: plan.eip1559Fees.maxPriorityFeePerGas,
+          }
+        : { gasPrice: plan.maxFeePerGas }),
+    });
+    report("fund", "Announcer funded from Gas Tank.", "ok", fundHash);
+    await publicClient.waitForTransactionReceipt({ hash: fundHash }).catch(() => undefined);
+  }
+
+  report("announce", "Publishing on-chain announcement (caller = Announcer)…", "wait");
+  const announceHash = await announcerWallet.sendTransaction({
+    account: announcerAccount,
+    chain: chain ?? undefined,
+    to: announcerContract,
+    data: plan.announceData,
+    value: 0n,
+    gas: plan.announceGasLimit,
+    ...(plan.eip1559Fees
+      ? {
+          maxFeePerGas: plan.eip1559Fees.maxFeePerGas,
+          maxPriorityFeePerGas: plan.eip1559Fees.maxPriorityFeePerGas,
+        }
+      : { gasPrice: plan.maxFeePerGas }),
+  });
+  report("announce", "Announcement published — scanners can index this payment.", "done", announceHash);
+
+  return { fundHash, announceHash };
 }
 
 /**

@@ -80,13 +80,21 @@ export const useGhostAddressStore = create<GhostState>()((set, get) => ({
   },
 
   remove: (stealthAddress, chainId) =>
-    set((state) => ({
-      entries: state.entries.filter(
+    set((state) => {
+      const entries = state.entries.filter(
         (e) =>
           e.chainId !== chainId ||
           String(e.stealthAddress).toLowerCase() !== stealthAddress.toLowerCase()
-      ),
-    })),
+      );
+      if (typeof localStorage !== "undefined") {
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(entries));
+        } catch {
+          /* ignore quota / private mode */
+        }
+      }
+      return { entries };
+    }),
 
   setEntries: (entries) =>
     set({

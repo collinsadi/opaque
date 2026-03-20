@@ -25,6 +25,8 @@ import { getTokensForChain, ERC20_BALANCE_ABI } from "../lib/tokens";
 import type { TokenInfo } from "../lib/tokens";
 import { ExplorerLink } from "./ExplorerLink";
 import { useGasTankStore } from "../store/gasTankStore";
+import { ghostAnnouncementEntryKey, useGhostAnnouncementStore } from "../store/ghostAnnouncementStore";
+import { GhostAnnounceModal } from "./GhostAnnounceModal";
 
 export type FoundTx = {
   id: string;
@@ -244,6 +246,7 @@ export function PrivateBalanceView() {
   const pushTx = useTxHistoryStore((s) => s.push);
   const chain = chainId != null ? getChain(chainId) : null;
   const ghostStoreEntries = useGhostAddressStore((s) => s.entries);
+  const ghostAnnouncementKeys = useGhostAnnouncementStore((s) => s.keys);
   const ghostEntries = useMemo(
     () =>
       ghostStoreEntries.filter(
@@ -257,6 +260,10 @@ export function PrivateBalanceView() {
   const [manualImportOpen, setManualImportOpen] = useState(false);
   const [manualImportAddress, setManualImportAddress] = useState("");
   const [manualImportError, setManualImportError] = useState<string | null>(null);
+  const [ghostAnnounceTarget, setGhostAnnounceTarget] = useState<{
+    stealthAddress: `0x${string}`;
+    ephemeralPrivKeyHex: `0x${string}`;
+  } | null>(null);
 
   const rpcUrl = chain ? getRpcUrl(chain) : undefined;
   const publicClient = useMemo(() => {
@@ -844,7 +851,24 @@ export function PrivateBalanceView() {
                     ? formatEther(balanceRaw)
                     : (Number(balanceRaw) / 10 ** selectedAsset.decimals).toFixed(selectedAsset.decimals);
                 const ghostEntry = ghostEntries.find((e) => e.stealthAddress.toLowerCase() === tx.address.toLowerCase());
+                const ghostEntryAny = ghostStoreEntries.find(
+                  (e) => e.chainId === chainId && e.stealthAddress.toLowerCase() === tx.address.toLowerCase()
+                );
                 const canReconstructKey = !!(ghostEntry?.ephemeralPrivKeyHex && ghostEntry?.stealthAddress);
+                const announcerConfigured =
+                  !!currentConfig?.announcer &&
+                  currentConfig.announcer !== "0x0000000000000000000000000000000000000000";
+                const ghostAnnouncedOnChain =
+                  chainId != null && !!ghostAnnouncementKeys[ghostAnnouncementEntryKey(chainId, tx.address)];
+                const canAnnounceGhostOnchain =
+                  tx.source === "manual" &&
+                  chainId != null &&
+                  announcerConfigured &&
+                  !!ghostEntryAny?.ephemeralPrivKeyHex &&
+                  !!keysContext.stealthMetaAddressHex &&
+                  !!wasm &&
+                  !!publicClient &&
+                  !ghostAnnouncedOnChain;
                 const isGhostWithoutKey = tx.source === "manual" && !tx.privateKey && !canReconstructKey;
                 if (isGhostWithoutKey) {
                   return (
@@ -913,6 +937,20 @@ export function PrivateBalanceView() {
                           className="px-2 py-1 text-xs rounded-md border border-neutral-600 text-neutral-400 hover:bg-neutral-800 hover:text-neutral-300"
                         >
                           Archive
+                        </button>
+                      )}
+                      {canAnnounceGhostOnchain && ghostEntryAny?.ephemeralPrivKeyHex && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setGhostAnnounceTarget({
+                              stealthAddress: tx.address as `0x${string}`,
+                              ephemeralPrivKeyHex: ghostEntryAny.ephemeralPrivKeyHex as `0x${string}`,
+                            })
+                          }
+                          className="px-2 py-1 text-xs rounded-md border border-cyan-500/50 text-cyan-300 hover:bg-cyan-500/10"
+                        >
+                          Announce on-chain
                         </button>
                       )}
                     <button
@@ -1033,6 +1071,32 @@ export function PrivateBalanceView() {
       )}
 
       {/* Manual import: paste a ghost address to add to tracking and check for funds */}
+      {ghostAnnounceTarget &&
+        chainId != null &&
+        keysContext.stealthMetaAddressHex &&
+        wasm &&
+        publicClient &&
+        currentConfig?.announcer && (
+          <GhostAnnounceModal
+            open
+            onClose={() => setGhostAnnounceTarget(null)}
+            chainId={chainId}
+            ghostStealthAddress={ghostAnnounceTarget.stealthAddress}
+            ephemeralPrivKeyHex={ghostAnnounceTarget.ephemeralPrivKeyHex}
+            stealthMetaAddressHex={keysContext.stealthMetaAddressHex}
+            publicClient={publicClient}
+            wasm={wasm}
+            getMasterKeys={keysContext.getMasterKeys}
+            announcerContract={currentConfig.announcer}
+            gasTankInitialized={gasTankInitialized}
+            storedGasTankAddress={gasTankAddress}
+            onAnnounced={() => {
+              setGhostAnnounceTarget(null);
+              showToast("Announced on-chain. Removed from manual ghost tracking.");
+            }}
+          />
+        )}
+
       {manualImportOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60" onClick={() => setManualImportOpen(false)}>
           <div

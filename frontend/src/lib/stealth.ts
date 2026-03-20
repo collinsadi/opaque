@@ -237,6 +237,34 @@ export function computeStealthAddressAndViewTag(
   };
 }
 
+/**
+ * Rebuild ERC-5564 announce() parameters for a manual ghost receive using the stored ephemeral
+ * private key (same derivation as {@link computeStealthAddressAndViewTag} with a fixed r).
+ */
+export function buildGhostAnnouncementPayload(
+  recipientMetaAddressHex: Hex,
+  ephemeralPrivKeyHex: Hex
+): {
+  stealthAddress: Address;
+  ephemeralPubKey: Uint8Array;
+  metadata: Uint8Array;
+  viewTag: number;
+} {
+  const { viewPubKey, spendPubKey } = parseStealthMetaAddress(recipientMetaAddressHex);
+  const h = ephemeralPrivKeyHex.startsWith("0x") ? ephemeralPrivKeyHex.slice(2) : ephemeralPrivKeyHex;
+  const ephemeralPriv = hexToBytes(h);
+  if (ephemeralPriv.length !== 32) {
+    throw new Error("Ephemeral private key must be 32 bytes.");
+  }
+  const ephemeralPubKey = CURVE.getPublicKey(ephemeralPriv, true);
+  const shared = sharedSecretSender(ephemeralPriv, viewPubKey);
+  const { sH, viewTag } = hashSharedSecret(shared);
+  const { stealthAddress } = stealthPointAndAddress(spendPubKey, sH);
+  const metadata = new Uint8Array(1);
+  metadata[0] = viewTag;
+  return { stealthAddress, ephemeralPubKey, metadata, viewTag };
+}
+
 // -----------------------------------------------------------------------------
 // Utilities
 // -----------------------------------------------------------------------------
@@ -270,6 +298,7 @@ export type { Address, Hex };
 // -----------------------------------------------------------------------------
 
 const GAS_TANK_SALT = "opaque-gas-tank-v1";
+const ANNOUNCER_SALT = "opaque-announcer-v1";
 
 /**
  * Derive a deterministic 32-byte ephemeral private key for the gas tank from the user's meta-address.
@@ -281,6 +310,29 @@ export function deriveGasTankEphemeralKey(metaAddressHex: Hex): Uint8Array {
   const raw = typeof metaAddressHex === "string" && metaAddressHex.startsWith("0x") ? metaAddressHex.slice(2) : metaAddressHex;
   const seed = new TextEncoder().encode(raw + GAS_TANK_SALT);
   const okm = hkdf(sha256, seed, undefined, "opaque-gas-tank-ephemeral", 32);
+  const n = CURVE.CURVE.n;
+  let scalar = bytesToBigInt(okm) % n;
+  if (scalar === 0n) scalar = 1n;
+  const out = new Uint8Array(32);
+  let x = scalar;
+  for (let i = 31; i >= 0; i--) {
+    out[i] = Number(x & 0xffn);
+    x >>= 8n;
+  }
+  return out;
+}
+
+/**
+ * Deterministic ephemeral scalar for the "Announcer" stealth signer (pays gas for ghost on-chain
+ * announcements without linking the user's main connected wallet).
+ */
+export function deriveAnnouncerEphemeralKey(metaAddressHex: Hex): Uint8Array {
+  const raw =
+    typeof metaAddressHex === "string" && metaAddressHex.startsWith("0x")
+      ? metaAddressHex.slice(2)
+      : metaAddressHex;
+  const seed = new TextEncoder().encode(raw + ANNOUNCER_SALT);
+  const okm = hkdf(sha256, seed, undefined, "opaque-announcer-ephemeral", 32);
   const n = CURVE.CURVE.n;
   let scalar = bytesToBigInt(okm) % n;
   if (scalar === 0n) scalar = 1n;

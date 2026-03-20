@@ -26,6 +26,8 @@ type WatchlistState = {
   add: (chainId: number, address: Address) => void;
   /** Stop polling this address (e.g. after user withdrew and wants to reduce RPC load). */
   archive: (chainId: number, address: string) => void;
+  /** Drop the address from the watchlist entirely. */
+  remove: (chainId: number, address: string) => void;
   /** Un-archive so we start polling again. */
   unarchive: (chainId: number, address: string) => void;
   /** Addresses we should poll for the given chain (not archived). */
@@ -68,6 +70,16 @@ export const useWatchlistStore = create<WatchlistState>()(
               e.chainId === chainId && e.address.toLowerCase() === normalized
                 ? { ...e, archived: true }
                 : e
+            ),
+          };
+        }),
+
+      remove: (chainId, address) =>
+        set((state) => {
+          const normalized = address.toLowerCase();
+          return {
+            entries: state.entries.filter(
+              (e) => !(e.chainId === chainId && e.address.toLowerCase() === normalized)
             ),
           };
         }),
