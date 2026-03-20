@@ -1,8 +1,0 @@
-{
-  "polkadot-testnet": {
-    "StealthAddressAnnouncer": {
-      "address": "0xD5FDa624D5F58F4586A959ff3e9c7CA72a9b74D8",
-      "startBlock": 5590094
-    }
-  }
-}
