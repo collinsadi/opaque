@@ -260,6 +260,7 @@ export function PrivateBalanceView() {
   const [manualImportOpen, setManualImportOpen] = useState(false);
   const [manualImportAddress, setManualImportAddress] = useState("");
   const [manualImportError, setManualImportError] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
   const [ghostAnnounceTarget, setGhostAnnounceTarget] = useState<{
     stealthAddress: `0x${string}`;
     ephemeralPrivKeyHex: `0x${string}`;
@@ -600,6 +601,17 @@ export function PrivateBalanceView() {
     await scanner.retrySync();
   }, [chainId, scanner]);
 
+  const handleRefreshBalances = useCallback(async () => {
+    setSyncingPaused(false);
+    setSyncError(null);
+    setRefreshing(true);
+    try {
+      await scanner.refresh();
+    } finally {
+      setRefreshing(false);
+    }
+  }, [scanner]);
+
   // Derive FoundTx from scanner cache + WASM matching (in idle to avoid UI lag)
   useEffect(() => {
     if (!wasmReady || wasm === null || chainId == null || !publicClient) {
@@ -723,17 +735,27 @@ export function PrivateBalanceView() {
         <p className="text-sm text-neutral-500 mb-6">
           Total assets (ETH, USDC, USDT) across your stealth addresses. Click an asset to see addresses and withdraw.
         </p>
-        <button
-          type="button"
-          onClick={() => {
-            setManualImportOpen(true);
-            setManualImportAddress("");
-            setManualImportError(null);
-          }}
-          className="mb-4 px-3 py-1.5 text-sm rounded-lg border border-neutral-600 text-neutral-300 hover:bg-neutral-800 hover:border-neutral-500 transition-colors"
-        >
-          Missing a Payment?
-        </button>
+        <div className="mb-4 flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={handleRefreshBalances}
+            disabled={refreshing || scanner.progress.phase === "syncing" || scanner.progress.phase === "backfilling" || scanner.progress.phase === "indexer-fetch"}
+            className="px-3 py-1.5 text-sm rounded-lg border border-neutral-600 text-neutral-300 hover:bg-neutral-800 hover:border-neutral-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {refreshing ? "Refreshing…" : "Refresh Balances"}
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setManualImportOpen(true);
+              setManualImportAddress("");
+              setManualImportError(null);
+            }}
+            className="px-3 py-1.5 text-sm rounded-lg border border-neutral-600 text-neutral-300 hover:bg-neutral-800 hover:border-neutral-500 transition-colors"
+          >
+            Missing a Payment?
+          </button>
+        </div>
 
         {/* Scanning status (IndexedDB cache + adaptive RPC) */}
         <div
