@@ -1,6 +1,6 @@
 # Opaque Cash
 
-**[Visit Website](https://opaque.cash)** · **[Registry Contract on Sepolia](https://sepolia.etherscan.io/address/0x77425e04163d608B876c7f50E34A378624A12067)** · **[Announcer Contract on Sepolia](https://sepolia.etherscan.io/address/0x840f72249A8bF6F10b0eB64412E315efBD730865)** · **[Demo Video](https://youtu.be/bwYRj09Hz6M)**
+**[Visit Website](https://opaque.cash)** · **[Registry Contract on Sepolia](https://sepolia.etherscan.io/address/0x77425e04163d608B876c7f50E34A378624A12067)** · **[Announcer Contract on Sepolia](https://sepolia.etherscan.io/address/0x840f72249A8bF6F10b0eB64412E315efBD730865)** · **[Demo Video](https://youtu.be/NAo7j0-Yqa8)**
 
 **Opaque Cash** is a stealth-address wallet and privacy protocol. See [DISCLAIMER.md](DISCLAIMER.md) for important notes on the experimental nature of the stealth address cryptography and local storage usage. built on **EIP-5564** (Stealth Addresses) and a **Stealth Meta-Address Registry**. Users receive ETH and ERC-20 tokens at one-time stealth addresses derived from a single meta-address; senders can target recipients by meta-address or by standard Ethereum address (resolved via the Registry).
 
