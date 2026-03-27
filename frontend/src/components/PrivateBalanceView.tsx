@@ -12,6 +12,8 @@ import { executeStealthWithdrawal, checkStealthWithdrawalGas, withdrawFromGhostA
 import type { MasterKeys } from "../lib/stealthLifecycle";
 import type { ProtocolStep } from "./ProtocolStepper";
 import type { OpaqueWasmModule } from "../hooks/useOpaqueWasm";
+import { useReputationStore } from "../store/reputationStore";
+import { getTraitByAttestationId, StealthAttestationArraySchema, type DiscoveredTrait } from "../lib/reputation";
 import { ClaimModal } from "./ClaimModal";
 import { GasRequiredModal } from "./GasRequiredModal";
 import { useProtocolLog } from "../context/ProtocolLogContext";
@@ -215,6 +217,75 @@ async function processRawLogsToFoundTxs(
   });
 
   return found;
+}
+
+function scanForAttestations(
+  wasm: OpaqueWasmModule,
+  getMasterKeys: (() => MasterKeys) | null,
+  announcements: CachedAnnouncement[],
+  addDiscoveredTrait: (trait: DiscoveredTrait) => void
+) {
+  if (!getMasterKeys || announcements.length === 0) return;
+
+  let masterKeys: MasterKeys;
+  try {
+    masterKeys = getMasterKeys();
+  } catch {
+    return;
+  }
+
+  const jsonPayload = JSON.stringify(
+    announcements.map((a) => ({
+      stealthAddress: a.args?.stealthAddress ?? "",
+      viewTag: parseInt((a.args?.metadata ?? "0x00").slice(2, 4), 16),
+      ephemeralPubKey: a.args?.ephemeralPubKey ?? "0x",
+      metadata: a.args?.metadata ?? "0x",
+      txHash: a.transactionHash,
+      blockNumber: a.blockNumber,
+    }))
+  );
+
+  try {
+    const resultJson = wasm.scan_attestations_wasm(
+      jsonPayload,
+      masterKeys.viewPrivKey,
+      masterKeys.spendPubKey
+    );
+    const parsed = StealthAttestationArraySchema.safeParse(JSON.parse(resultJson));
+    if (!parsed.success) {
+      console.warn("📥 [Opaque] Attestation scan: validation failed", parsed.error);
+      return;
+    }
+
+    for (const att of parsed.data) {
+      const traitDef =
+        getTraitByAttestationId(att.attestation_id) ??
+        {
+          id: `custom-${att.attestation_id}`,
+          attestationId: att.attestation_id,
+          label: `Trait #${att.attestation_id}`,
+          description: "Custom attestation",
+          icon: "layers",
+          category: "custom" as const,
+        };
+
+      addDiscoveredTrait({
+        traitDef,
+        attestationId: att.attestation_id,
+        stealthAddress: att.stealth_address,
+        txHash: att.tx_hash,
+        blockNumber: att.block_number,
+        discoveredAt: Date.now(),
+        ephemeralPubkey: att.ephemeral_pubkey,
+      });
+    }
+
+    if (parsed.data.length > 0) {
+      console.log(`📥 [Opaque] Discovered ${parsed.data.length} attestation trait(s)`);
+    }
+  } catch (err) {
+    console.warn("📥 [Opaque] Attestation scan error (non-fatal):", err);
+  }
 }
 
 export type PortfolioEntry = { tx: FoundTx; balanceRaw: bigint };
@@ -628,6 +699,7 @@ export function PrivateBalanceView() {
 
     setLoading(true);
     const getMasterKeys = keysContext.isSetup ? keysContext.getMasterKeys : null;
+    const addDiscoveredTrait = useReputationStore.getState().addDiscoveredTrait;
     const runMatch = () => {
       const rawLogs = scanner.announcements.map(cachedToLogWithArgs);
       processRawLogsToFoundTxs(publicClient, rawLogs, wasm, getMasterKeys, chainId)
@@ -639,6 +711,8 @@ export function PrivateBalanceView() {
             return txs;
           });
           logPush("wasm", `Matched ${txs.length} owned announcement(s) from cache`);
+
+          scanForAttestations(wasm, getMasterKeys, scanner.announcements, addDiscoveredTrait);
         })
         .catch((err) => console.warn("📥 [Opaque] Match error", err))
         .finally(() => {
