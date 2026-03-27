@@ -45,6 +45,36 @@ export function check_announcement_wasm(announcement_stealth_address: string, vi
  */
 export function derive_stealth_address_wasm(view_privkey_bytes: Uint8Array, spend_pubkey_bytes: Uint8Array, ephemeral_pubkey_bytes: Uint8Array): any;
 
+/**
+ * Encodes attestation metadata for use in announcements.
+ *
+ * # Arguments
+ * * `view_tag` - View tag byte (0-255)
+ * * `attestation_id` - Attestation/badge ID
+ *
+ * # Returns
+ * Hex-encoded metadata bytes.
+ */
+export function encode_attestation_metadata_wasm(view_tag: number, attestation_id: bigint): string;
+
+/**
+ * Generates the full ZK-circuit witness for a specific trait.
+ *
+ * Builds a local Merkle tree from the given attestations, finds the first
+ * attestation matching `target_trait_id`, generates an inclusion proof,
+ * and returns a JSON witness compatible with the Circom circuit.
+ *
+ * # Arguments
+ * * `attestations_json` - JSON array of `StealthAttestation` (from `scan_attestations_wasm`)
+ * * `target_trait_id` - The attestation_id to prove (as string decimal)
+ * * `stealth_privkey_bytes` - 32-byte stealth private key for the matching address
+ * * `external_nullifier` - Action-scoped nonce (as string decimal)
+ *
+ * # Returns
+ * JSON `CircuitWitness` for the Circom prover.
+ */
+export function generate_reputation_witness(attestations_json: string, target_trait_id: string, stealth_privkey_bytes: Uint8Array, external_nullifier: string): string;
+
 export function init(): void;
 
 /**
@@ -60,6 +90,20 @@ export function init(): void;
  */
 export function reconstruct_signing_key_wasm(master_spend_priv_bytes: Uint8Array, master_view_priv_bytes: Uint8Array, ephemeral_pubkey_bytes: Uint8Array): Uint8Array;
 
+/**
+ * Scans announcement metadata for attestation markers.
+ *
+ * # Arguments
+ * * `announcements_json` - JSON array of announcements, each with:
+ *   `{ stealthAddress, viewTag, ephemeralPubKey, metadata, txHash, blockNumber }`
+ * * `view_privkey_bytes` - 32-byte viewing private key
+ * * `spend_pubkey_bytes` - 33-byte spending public key (compressed)
+ *
+ * # Returns
+ * JSON array of `StealthAttestation` objects found for this recipient.
+ */
+export function scan_attestations_wasm(announcements_json: string, view_privkey_bytes: Uint8Array, spend_pubkey_bytes: Uint8Array): string;
+
 export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
 
 export interface InitOutput {
@@ -67,7 +111,10 @@ export interface InitOutput {
     readonly check_announcement_view_tag_wasm: (a: number, b: number, c: number, d: number, e: number) => [number, number, number, number];
     readonly check_announcement_wasm: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number) => [number, number, number];
     readonly derive_stealth_address_wasm: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number];
+    readonly encode_attestation_metadata_wasm: (a: number, b: bigint) => [number, number];
+    readonly generate_reputation_witness: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number, number, number];
     readonly reconstruct_signing_key_wasm: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
+    readonly scan_attestations_wasm: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
     readonly init: () => void;
     readonly __wbindgen_free: (a: number, b: number, c: number) => void;
     readonly __wbindgen_exn_store: (a: number) => void;
