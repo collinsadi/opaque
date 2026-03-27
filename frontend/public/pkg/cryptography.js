@@ -105,6 +105,80 @@ export function derive_stealth_address_wasm(view_privkey_bytes, spend_pubkey_byt
     return takeFromExternrefTable0(ret[0]);
 }
 
+/**
+ * Encodes attestation metadata for use in announcements.
+ *
+ * # Arguments
+ * * `view_tag` - View tag byte (0-255)
+ * * `attestation_id` - Attestation/badge ID
+ *
+ * # Returns
+ * Hex-encoded metadata bytes.
+ * @param {number} view_tag
+ * @param {bigint} attestation_id
+ * @returns {string}
+ */
+export function encode_attestation_metadata_wasm(view_tag, attestation_id) {
+    let deferred1_0;
+    let deferred1_1;
+    try {
+        const ret = wasm.encode_attestation_metadata_wasm(view_tag, attestation_id);
+        deferred1_0 = ret[0];
+        deferred1_1 = ret[1];
+        return getStringFromWasm0(ret[0], ret[1]);
+    } finally {
+        wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+    }
+}
+
+/**
+ * Generates the full ZK-circuit witness for a specific trait.
+ *
+ * Builds a local Merkle tree from the given attestations, finds the first
+ * attestation matching `target_trait_id`, generates an inclusion proof,
+ * and returns a JSON witness compatible with the Circom circuit.
+ *
+ * # Arguments
+ * * `attestations_json` - JSON array of `StealthAttestation` (from `scan_attestations_wasm`)
+ * * `target_trait_id` - The attestation_id to prove (as string decimal)
+ * * `stealth_privkey_bytes` - 32-byte stealth private key for the matching address
+ * * `external_nullifier` - Action-scoped nonce (as string decimal)
+ *
+ * # Returns
+ * JSON `CircuitWitness` for the Circom prover.
+ * @param {string} attestations_json
+ * @param {string} target_trait_id
+ * @param {Uint8Array} stealth_privkey_bytes
+ * @param {string} external_nullifier
+ * @returns {string}
+ */
+export function generate_reputation_witness(attestations_json, target_trait_id, stealth_privkey_bytes, external_nullifier) {
+    let deferred6_0;
+    let deferred6_1;
+    try {
+        const ptr0 = passStringToWasm0(attestations_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passStringToWasm0(target_trait_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ptr2 = passArray8ToWasm0(stealth_privkey_bytes, wasm.__wbindgen_malloc);
+        const len2 = WASM_VECTOR_LEN;
+        const ptr3 = passStringToWasm0(external_nullifier, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len3 = WASM_VECTOR_LEN;
+        const ret = wasm.generate_reputation_witness(ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3);
+        var ptr5 = ret[0];
+        var len5 = ret[1];
+        if (ret[3]) {
+            ptr5 = 0; len5 = 0;
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        deferred6_0 = ptr5;
+        deferred6_1 = len5;
+        return getStringFromWasm0(ptr5, len5);
+    } finally {
+        wasm.__wbindgen_free(deferred6_0, deferred6_1, 1);
+    }
+}
+
 export function init() {
     wasm.init();
 }
@@ -138,6 +212,47 @@ export function reconstruct_signing_key_wasm(master_spend_priv_bytes, master_vie
     var v4 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
     wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
     return v4;
+}
+
+/**
+ * Scans announcement metadata for attestation markers.
+ *
+ * # Arguments
+ * * `announcements_json` - JSON array of announcements, each with:
+ *   `{ stealthAddress, viewTag, ephemeralPubKey, metadata, txHash, blockNumber }`
+ * * `view_privkey_bytes` - 32-byte viewing private key
+ * * `spend_pubkey_bytes` - 33-byte spending public key (compressed)
+ *
+ * # Returns
+ * JSON array of `StealthAttestation` objects found for this recipient.
+ * @param {string} announcements_json
+ * @param {Uint8Array} view_privkey_bytes
+ * @param {Uint8Array} spend_pubkey_bytes
+ * @returns {string}
+ */
+export function scan_attestations_wasm(announcements_json, view_privkey_bytes, spend_pubkey_bytes) {
+    let deferred5_0;
+    let deferred5_1;
+    try {
+        const ptr0 = passStringToWasm0(announcements_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passArray8ToWasm0(view_privkey_bytes, wasm.__wbindgen_malloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ptr2 = passArray8ToWasm0(spend_pubkey_bytes, wasm.__wbindgen_malloc);
+        const len2 = WASM_VECTOR_LEN;
+        const ret = wasm.scan_attestations_wasm(ptr0, len0, ptr1, len1, ptr2, len2);
+        var ptr4 = ret[0];
+        var len4 = ret[1];
+        if (ret[3]) {
+            ptr4 = 0; len4 = 0;
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        deferred5_0 = ptr4;
+        deferred5_1 = len4;
+        return getStringFromWasm0(ptr4, len4);
+    } finally {
+        wasm.__wbindgen_free(deferred5_0, deferred5_1, 1);
+    }
 }
 
 function __wbg_get_imports() {
