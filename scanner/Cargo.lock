@@ -452,10 +452,12 @@ dependencies = [
  "alloy-primitives",
  "console_error_panic_hook",
  "getrandom 0.2.17",
+ "hex",
  "js-sys",
  "k256",
  "serde",
  "serde-wasm-bindgen",
+ "serde_json",
  "sha3",
  "wasm-bindgen",
 ]
