@@ -104,7 +104,7 @@ function AppContent() {
 
   if (!isSetup) {
     return (
-      <div className="h-screen flex flex-col bg-black">
+      <div className="min-h-dvh flex flex-col bg-black">
         {onboardingPhase === "landing" ? (
           <LandingPage onEnterVault={() => setOnboardingPhase("entry")} />
         ) : (
