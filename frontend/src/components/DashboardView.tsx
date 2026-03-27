@@ -138,6 +138,13 @@ export function DashboardView({ onNavigate, address, chainId }: DashboardViewPro
         >
           Transaction history
         </button>
+        <button
+          type="button"
+          onClick={() => onNavigate("reputation")}
+          className="px-4 py-2 rounded-lg text-sm btn-secondary"
+        >
+          Reputation
+        </button>
       </div>
 
       {showSwitchModal && (
