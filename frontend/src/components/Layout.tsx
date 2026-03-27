@@ -5,7 +5,7 @@ import { Footer } from "./Footer";
 import { AddressDisplay } from "./AddressDisplay";
 import { TestnetBanner } from "./TestnetBanner";
 
-export type Tab = "dashboard" | "send" | "receive" | "balance" | "history" | "subens" | "profile";
+export type Tab = "dashboard" | "send" | "receive" | "balance" | "history" | "subens" | "profile" | "reputation";
 
 type LayoutProps = {
   tab: Tab;
