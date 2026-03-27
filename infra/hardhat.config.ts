@@ -1,11 +1,14 @@
 import hardhatToolboxViemPlugin from "@nomicfoundation/hardhat-toolbox-viem";
 import { configVariable, defineConfig } from "hardhat/config";
+import dotenv from "dotenv";
+
+dotenv.config();
 
 export default defineConfig({
   plugins: [hardhatToolboxViemPlugin],
   verify: {
     etherscan: {
-      apiKey: "",
+      apiKey: process.env.ETHERSCAN_API_KEY ?? "",
     },
   },
   solidity: {
@@ -36,9 +39,9 @@ export default defineConfig({
     sepolia: {
       type: "http",
       chainType: "l1",
-      url: configVariable("SEPOLIA_RPC_URL"),
+      url: process.env.SEPOLIA_RPC_URL ?? "",
       chainId: 11155111,
-      accounts: [configVariable("SEPOLIA_PRIVATE_KEY")],
+      accounts: [process.env.SEPOLIA_PRIVATE_KEY ?? ""],
     },
     // Polkadot Hub testnet (Paseo) – use deploy:paseo or deploy:tokens:paseo
     paseo: {

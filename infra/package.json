@@ -20,7 +20,10 @@
     "deploy:tokens:paseo": "hardhat ignition deploy ignition/modules/Tokens.ts --network paseo",
     "verify:sepolia": "hardhat verify --network sepolia",
     "clean": "hardhat clean",
-    "deploy:scripts": "hardhat compile && tsx scripts/deploy.ts"
+    "deploy:scripts": "hardhat compile && tsx scripts/deploy.ts",
+    "deploy:reputation:sepolia": "hardhat compile && tsx scripts/deploy-reputation.ts",
+    "issue-trait": "tsx scripts/issue-trait.ts",
+    "verify:reputation:sepolia": "echo 'Run these after deploy:' && echo 'npx hardhat verify --network sepolia 0x78A169b6E308Fd5BfAfc728f216CdB06EcEdde06' && echo 'npx hardhat verify --network sepolia 0x30B750Ae9851e104F8dbB4B8082b1a07a34885B0 0x78A169b6E308Fd5BfAfc728f216CdB06EcEdde06 0x7c8D8816aF13D77A9CFC9E510618f4F2DD625D13'"
   },
   "dependencies": {
     "dotenv": "^17.3.1",
