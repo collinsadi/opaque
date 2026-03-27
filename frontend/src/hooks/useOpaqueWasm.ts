@@ -40,6 +40,21 @@ export interface OpaqueWasmModule {
     master_view_priv_bytes: Uint8Array,
     ephemeral_pubkey_bytes: Uint8Array
   ) => Uint8Array;
+  scan_attestations_wasm: (
+    announcements_json: string,
+    view_privkey_bytes: Uint8Array,
+    spend_pubkey_bytes: Uint8Array
+  ) => string;
+  generate_reputation_witness: (
+    attestations_json: string,
+    target_trait_id: string,
+    stealth_privkey_bytes: Uint8Array,
+    external_nullifier: string
+  ) => string;
+  encode_attestation_metadata_wasm: (
+    view_tag: number,
+    attestation_id: bigint
+  ) => string;
 }
 
 interface UseOpaqueWasmReturn {
