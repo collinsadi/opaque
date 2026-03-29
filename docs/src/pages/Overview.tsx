@@ -16,6 +16,34 @@ const SOCIAL = [
   },
 ] as const;
 
+/** Sepolia — addresses and Etherscan links from project README */
+const SEPOLIA_CONTRACTS = [
+  {
+    name: "StealthMetaAddressRegistry",
+    note: "Registry",
+    href: "https://sepolia.etherscan.io/address/0x77425e04163d608B876c7f50E34A378624A12067",
+    address: "0x77425e04163d608B876c7f50E34A378624A12067",
+  },
+  {
+    name: "StealthAddressAnnouncer",
+    note: "Announcer",
+    href: "https://sepolia.etherscan.io/address/0x840f72249A8bF6F10b0eB64412E315efBD730865",
+    address: "0x840f72249A8bF6F10b0eB64412E315efBD730865",
+  },
+  {
+    name: "Groth16Verifier",
+    note: null,
+    href: "https://sepolia.etherscan.io/address/0x78A169b6E308Fd5BfAfc728f216CdB06EcEdde06",
+    address: "0x78A169b6E308Fd5BfAfc728f216CdB06EcEdde06",
+  },
+  {
+    name: "OpaqueReputationVerifier",
+    note: null,
+    href: "https://sepolia.etherscan.io/address/0x30B750Ae9851e104F8dbB4B8082b1a07a34885B0",
+    address: "0x30B750Ae9851e104F8dbB4B8082b1a07a34885B0",
+  },
+] as const;
+
 export function Overview() {
   return (
     <div className="space-y-10">
@@ -94,6 +122,65 @@ export function Overview() {
           </p>
         </Link>
       </div>
+
+      <section className="space-y-4">
+        <h2 className="font-display text-xl font-bold text-white md:text-2xl">
+          Contracts (Sepolia)
+        </h2>
+        <p className="max-w-2xl text-mist">
+          Testnet deployments on{" "}
+          <span className="font-medium text-white">Sepolia</span> (chain ID{" "}
+          <code className="rounded bg-ink-800/80 px-1.5 py-0.5 font-mono text-sm text-glow/90">
+            11155111
+          </code>
+          ).
+        </p>
+        <div className="overflow-x-auto rounded-xl border border-ink-600">
+          <table className="w-full text-left text-sm">
+            <thead>
+              <tr className="border-b border-ink-600 bg-ink-900/80">
+                <th className="p-3 text-mist">Chain</th>
+                <th className="p-3 text-mist">Contract</th>
+                <th className="p-3 text-mist">Address</th>
+                <th className="p-3 text-mist">Explorer</th>
+              </tr>
+            </thead>
+            <tbody>
+              {SEPOLIA_CONTRACTS.map((row) => (
+                <tr
+                  key={row.address}
+                  className="border-b border-ink-700/80 text-slate-300 last:border-b-0"
+                >
+                  <td className="whitespace-nowrap p-3 font-medium text-white">
+                    Sepolia
+                  </td>
+                  <td className="p-3">
+                    <span className="font-mono text-[13px] text-glow/90">
+                      {row.name}
+                    </span>
+                    {row.note ? (
+                      <span className="ml-2 text-xs text-mist">({row.note})</span>
+                    ) : null}
+                  </td>
+                  <td className="p-3 font-mono text-[13px] text-mist">
+                    {row.address}
+                  </td>
+                  <td className="p-3">
+                    <a
+                      href={row.href}
+                      target="_blank"
+                      rel="noreferrer noopener"
+                      className="text-glow underline decoration-glow/40 underline-offset-2 hover:decoration-glow"
+                    >
+                      Etherscan
+                    </a>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
 
       <section className="rounded-2xl border border-ink-600 bg-ink-900/20 p-6 md:p-8">
         <h2 className="font-display text-xl font-bold text-white md:text-2xl">
