@@ -2,15 +2,23 @@
 
 Single entry point for Opaque **stealth** (EIP-5564) and **PSR** flows used together with your own indexer.
 
+**Full documentation** (guides, API reference, playground): **[docs.opaque.cash](https://docs.opaque.cash)**
+
 ## Install
 
-Build the `sdk/` workspace, then depend on this package (path or npm link).
+```bash
+npm install @opaquecash/opaque
+```
+
+The package ships TypeScript types and depends on **`viem`** (v2). You must load the **WASM** bundle (`cryptography.js`) at runtime—either from your app’s static assets or a hosted URL (see below).
+
+### Working from this repository
 
 ```bash
 cd sdk && npm install && npm run build
 ```
 
-Peer stack: `viem`, wasm-pack output (`cryptography.js`).
+Then depend on `@opaquecash/opaque` via your workspace or `npm link`.
 
 ## Initialize
 
@@ -25,6 +33,10 @@ const client = await OpaqueClient.create({
   wasmModuleSpecifier: new URL("/pkg/cryptography.js", import.meta.url).href,
 });
 ```
+
+Hosted WASM entry used by the reference app:
+
+`https://www.opaque.cash/pkg/cryptography.js`
 
 ## Constants
 
@@ -66,4 +78,4 @@ You always submit transactions from your own wallet; the SDK returns **structure
 
 ## Lower-level packages
 
-`@opaquecash/stealth-core`, `@opaquecash/stealth-wasm`, `@opaquecash/stealth-chain`, `@opaquecash/psr-core`, etc. remain available for advanced integrations.
+`@opaquecash/stealth-core`, `@opaquecash/stealth-wasm`, `@opaquecash/stealth-chain`, `@opaquecash/psr-core`, and related packages remain available for advanced integrations.
