@@ -139,7 +139,7 @@ When an Opaque user proves a trait, the proof is verified by a Solidity contract
 
 ### 6. Modular SDK — Use What You Need
 
-Opaque's SDK is layered: `@opaque/stealth-`* for private payments, `@opaque/psr-*` for reputation, or both together. An integrator building a privacy wallet only needs the stealth layer. An integrator building a gated community only needs PSR. This modularity does not exist in monolithic privacy protocols. Railgun and Aztec offer SDKs, but they are all-or-nothing for their specific privacy model.
+Opaque's SDK is layered: `@opaquecash/stealth-`* for private payments, `@opaquecash/psr-*` for reputation, or both together. An integrator building a privacy wallet only needs the stealth layer. An integrator building a gated community only needs PSR. This modularity does not exist in monolithic privacy protocols. Railgun and Aztec offer SDKs, but they are all-or-nothing for their specific privacy model.
 
 ### 7. Pure Cryptographic Trust — No Hardware Assumptions
 
