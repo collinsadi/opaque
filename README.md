@@ -11,6 +11,10 @@
   &nbsp;·&nbsp;
   <a href="https://github.com/opaquecash/opaque">GitHub</a>
   &nbsp;·&nbsp;
+  <a href="https://www.npmjs.com/package/@opaquecash/opaque">SDK</a>
+  &nbsp;·&nbsp;
+  <a href="https://docs.opaque.cash">Docs</a>
+  &nbsp;·&nbsp;
   <a href="https://youtu.be/NAo7j0-Yqa8">Demo</a>
   <br /><br />
   <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/license-MIT-5c7cfa?style=flat-square" alt="MIT License" /></a>
@@ -20,7 +24,7 @@
 
 **Opaque** is an open protocol for **unlinkable receive addresses** and optional **reputation you can prove without doxxing your wallet**. Think of it as: every payment can land at a fresh address only you control, while still letting apps verify things like “this person passed KYC” or “this account is in good standing”—using zero-knowledge proofs when you opt into that layer.
 
-No single product owns the stack: there is a **reference wallet** at [opaque.cash](https://opaque.cash), a **TypeScript SDK** for builders, **developer docs** (guides + API reference + playground), and **on-chain contracts** you can read and deploy yourself.
+No single product owns the stack: there is a **reference wallet** at [opaque.cash](https://opaque.cash), a [**TypeScript SDK**](https://www.npmjs.com/package/@opaquecash/opaque) for builders, [**developer docs**](https://docs.opaque.cash) (guides + API reference + playground), and **on-chain contracts** you can read and deploy yourself.
 
 > **Heads-up:** This is experimental software. Stealth cryptography and local-only data paths have real trade-offs—read [DISCLAIMER.md](DISCLAIMER.md) before relying on it for anything serious.
 
