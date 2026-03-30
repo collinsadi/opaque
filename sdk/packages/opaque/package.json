@@ -1,6 +1,6 @@
 {
   "name": "@opaquecash/opaque",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Unified Opaque SDK client: config, indexer announcements, announce payloads, balances, traits",
   "type": "module",
   "main": "./dist/index.js",
@@ -25,7 +25,7 @@
     "@opaquecash/stealth-balance": "0.1.0",
     "@opaquecash/stealth-chain": "0.1.0",
     "@opaquecash/stealth-core": "0.1.0",
-    "@opaquecash/stealth-wasm": "0.1.0",
+    "@opaquecash/stealth-wasm": "0.1.2",
     "viem": "^2.21.0"
   },
   "sideEffects": false
