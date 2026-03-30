@@ -4,7 +4,7 @@
  * On success: "Vault Unlocked" animation, then onComplete() to transition to dashboard.
  */
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   createWalletClient,
   createPublicClient,
@@ -25,6 +25,12 @@ import {
 import { SCHEME_ID_SECP256K1 } from "../lib/contracts";
 import { getConfigForChain, isChainSupported } from "../contracts/contract-config";
 import { SwitchNetworkModal } from "./SwitchNetworkModal";
+import {
+  getRememberSignaturePreference,
+  loadSignatureSession,
+  saveSignatureSession,
+  setRememberSignaturePreference,
+} from "../lib/signatureSession";
 
 const SETUP_MESSAGE =
   "Sign this message to derive your Opaque Cash stealth keys. This does not approve any transaction.";
@@ -46,6 +52,11 @@ export function RegistrationWizard({ onComplete }: RegistrationWizardProps) {
   const [error, setError] = useState<string | null>(null);
   const [, setTxHash] = useState<Hash | null>(null);
   const [showSwitchModal, setShowSwitchModal] = useState(false);
+  const [rememberSession, setRememberSession] = useState<boolean>(() => getRememberSignaturePreference());
+
+  useEffect(() => {
+    setRememberSignaturePreference(rememberSession);
+  }, [rememberSession]);
 
   const wrongNetwork = chainId != null && !isChainSupported(chainId);
   const networkName = chainId != null ? getChain(chainId).name : "this network";
@@ -58,14 +69,32 @@ export function RegistrationWizard({ onComplete }: RegistrationWizardProps) {
     setError(null);
     setSigning(true);
     try {
-      const ethereum = (window as unknown as { ethereum?: EIP1193Provider }).ethereum;
-      const client = createWalletClient({
-        chain: chainId != null ? getChain(chainId) : getChain(11155111),
-        transport: custom(ethereum as EIP1193Provider),
-      });
-      const [acc] = await client.requestAddresses();
-      if (!acc) throw new Error("No account selected.");
-      const sig = await client.signMessage({ account: acc, message: SETUP_MESSAGE });
+      let sig = chainId != null
+        ? await loadSignatureSession({
+            address,
+            chainId,
+            message: SETUP_MESSAGE,
+          })
+        : null;
+      if (!sig) {
+        const ethereum = (window as unknown as { ethereum?: EIP1193Provider }).ethereum;
+        const client = createWalletClient({
+          chain: chainId != null ? getChain(chainId) : getChain(11155111),
+          transport: custom(ethereum as EIP1193Provider),
+        });
+        const [acc] = await client.requestAddresses();
+        if (!acc) throw new Error("No account selected.");
+        sig = await client.signMessage({ account: acc, message: SETUP_MESSAGE });
+        if (chainId != null) {
+          await saveSignatureSession({
+            signatureHex: sig,
+            address: acc,
+            chainId,
+            message: SETUP_MESSAGE,
+            remember: rememberSession,
+          });
+        }
+      }
       setFromSignature(sig);
       setStep("register");
     } catch (e) {
@@ -205,6 +234,15 @@ export function RegistrationWizard({ onComplete }: RegistrationWizardProps) {
                   Sign a message in your wallet to derive your spending and viewing keys. Keys are
                   generated locally and never leave your device.
                 </p>
+                <label className="inline-flex items-center gap-2 text-xs text-mist cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={rememberSession}
+                    onChange={(e) => setRememberSession(e.target.checked)}
+                    className="h-3.5 w-3.5 rounded border-ink-600 bg-ink-900 accent-glow"
+                  />
+                  Remember signature for this tab (about 30 minutes)
+                </label>
                 {error && <p className="text-sm text-red-400">{error}</p>}
                 <button
                   type="button"
