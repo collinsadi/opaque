@@ -1,9 +1,4 @@
-/**
- * Entry Gate — Bold minimalist initialization screen.
- * Shown when user clicks "Enter the Vault" and is not yet initialized.
- */
-
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createWalletClient, custom, encodeFunctionData, type EIP1193Provider } from "viem";
 import { getAppChain, getChain } from "../lib/chain";
 import { useKeys } from "../context/KeysContext";
@@ -11,11 +6,17 @@ import { useWallet } from "../hooks/useWallet";
 import { isRegistered, getRegistryAddress, STEALTH_REGISTRY_ABI } from "../lib/registry";
 import { SCHEME_ID_SECP256K1 } from "../lib/contracts";
 import { getConfigForChain } from "../contracts/contract-config";
+import {
+  getRememberSignaturePreference,
+  loadSignatureSession,
+  saveSignatureSession,
+  setRememberSignaturePreference,
+} from "../lib/signatureSession";
 
 const SETUP_MESSAGE =
   "Sign this message to derive your Opaque Cash stealth keys. This does not approve any transaction.";
 
-type Phase = "idle" | "connecting" | "signing" | "checking" | "register" | "registering" | "done" | "error";
+type Phase = "idle" | "restoring" | "connecting" | "signing" | "checking" | "register" | "registering" | "done" | "error";
 
 export function LandingView() {
   const { setFromSignature, isSetup, stealthMetaAddressHex } = useKeys();
@@ -24,6 +25,39 @@ export function LandingView() {
   const [phase, setPhase] = useState<Phase>("idle");
   const [error, setError] = useState<string | null>(null);
   const [txHash, setTxHash] = useState<string | null>(null);
+  const [rememberSession, setRememberSession] = useState<boolean>(() => getRememberSignaturePreference());
+  const attemptedRestoreKeysRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    setRememberSignaturePreference(rememberSession);
+  }, [rememberSession]);
+
+  useEffect(() => {
+    if (isSetup || !isConnected || !address || chainId == null) return;
+    const walletKey = `${address.toLowerCase()}:${chainId}`;
+    if (attemptedRestoreKeysRef.current.has(walletKey)) return;
+    attemptedRestoreKeysRef.current.add(walletKey);
+
+    let cancelled = false;
+    const run = async () => {
+      setPhase("restoring");
+      const signatureHex = await loadSignatureSession({
+        address,
+        chainId,
+        message: SETUP_MESSAGE,
+      });
+      if (cancelled) return;
+      if (signatureHex) {
+        setFromSignature(signatureHex);
+        return;
+      }
+      setPhase("idle");
+    };
+    run();
+    return () => {
+      cancelled = true;
+    };
+  }, [isSetup, isConnected, address, chainId, setFromSignature]);
 
   const handleEnterVault = async () => {
     setError(null);
@@ -45,23 +79,44 @@ export function LandingView() {
       return;
     }
 
-    setPhase("signing");
-    try {
-      const ethereum = (window as unknown as { ethereum?: EIP1193Provider }).ethereum;
-      if (!ethereum?.request) throw new Error("No wallet found.");
-      const client = createWalletClient({
-        chain: chainId != null ? getChain(chainId) : getAppChain(),
-        transport: custom(ethereum as EIP1193Provider),
+    let signatureHex: `0x${string}` | null = null;
+    if (chainId != null) {
+      signatureHex = await loadSignatureSession({
+        address,
+        chainId,
+        message: SETUP_MESSAGE,
       });
-      const [acc] = await client.requestAddresses();
-      if (!acc) throw new Error("No account selected.");
-      const sig = await client.signMessage({ account: acc, message: SETUP_MESSAGE });
-      setFromSignature(sig);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Signature failed");
-      setPhase("error");
-      return;
     }
+
+    if (!signatureHex) {
+      setPhase("signing");
+      try {
+        const ethereum = (window as unknown as { ethereum?: EIP1193Provider }).ethereum;
+        if (!ethereum?.request) throw new Error("No wallet found.");
+        const client = createWalletClient({
+          chain: chainId != null ? getChain(chainId) : getAppChain(),
+          transport: custom(ethereum as EIP1193Provider),
+        });
+        const [acc] = await client.requestAddresses();
+        if (!acc) throw new Error("No account selected.");
+        const sig = await client.signMessage({ account: acc, message: SETUP_MESSAGE });
+        signatureHex = sig;
+        if (chainId != null) {
+          await saveSignatureSession({
+            signatureHex: sig,
+            address: acc,
+            chainId,
+            message: SETUP_MESSAGE,
+            remember: rememberSession,
+          });
+        }
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Signature failed");
+        setPhase("error");
+        return;
+      }
+    }
+    setFromSignature(signatureHex);
 
     setPhase("checking");
     let registered: boolean;
@@ -116,80 +171,92 @@ export function LandingView() {
 
   if (isSetup) return null;
 
+  const showSpinner =
+    phase === "restoring" ||
+    phase === "connecting" ||
+    phase === "signing" ||
+    phase === "checking" ||
+    phase === "registering";
+
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-black px-6 py-16">
-      <div className="w-full max-w-md mx-auto text-center">
-        {/* Large Opaque heading */}
-        <h1 className="text-5xl sm:text-6xl md:text-7xl font-bold tracking-tight text-white mb-12">
-          Opaque
+    <div className="flex flex-1 flex-col items-center justify-center px-5 sm:px-8 py-16">
+      <div className="w-full max-w-md text-center">
+        <h1 className="font-display text-5xl font-extrabold tracking-tight text-white sm:text-6xl">
+          Opaque<span className="text-glow">.</span>
         </h1>
 
-        {/* Security Assurance Box */}
-        <div className="mb-10 p-5 rounded-xl border border-white/10 bg-white/2 text-left">
-          <p className="text-sm text-neutral-400 leading-relaxed">
-            By initializing, you generate your stealth keys locally. These keys never touch our
-            servers.
-          </p>
-        </div>
+        <p className="mt-4 text-mist">
+          Derive your stealth keys to begin. Keys are generated on-device and never
+          leave your browser.
+        </p>
 
-        {/* Primary CTA */}
         {phase === "idle" && (
-          <button
-            type="button"
-            onClick={handleEnterVault}
-            disabled={isConnecting}
-            className="w-full py-4 px-6 rounded-xl text-sm font-medium bg-white text-black hover:opacity-90 disabled:opacity-50 transition-opacity border-0"
-          >
-            {!isConnected ? "Connect wallet & Initialize Protocol" : "Initialize Protocol"}
-          </button>
+          <>
+            <button
+              type="button"
+              onClick={handleEnterVault}
+              disabled={isConnecting}
+              className="mt-8 w-full rounded-xl bg-glow px-6 py-3.5 text-sm font-semibold text-ink-950 transition-all hover:shadow-[0_0_32px_rgba(94,234,212,0.25)] hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50"
+            >
+              {!isConnected ? "Connect wallet & initialize" : "Initialize protocol"}
+            </button>
+            <label className="mt-3 inline-flex items-center gap-2 text-xs text-mist cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={rememberSession}
+                onChange={(e) => setRememberSession(e.target.checked)}
+                className="h-3.5 w-3.5 rounded border-ink-600 bg-ink-900 accent-glow"
+              />
+              Remember signature for this tab (about 30 minutes)
+            </label>
+          </>
         )}
 
-        {(phase === "connecting" || phase === "signing") && (
-          <p className="text-neutral-500 text-sm">
-            {phase === "connecting"
-              ? "Check your wallet to connect…"
-              : "Sign the message in your wallet to derive keys…"}
-          </p>
-        )}
-
-        {phase === "checking" && (
-          <p className="text-neutral-500 text-sm">Checking registry…</p>
+        {showSpinner && (
+          <div className="mt-8 flex flex-col items-center gap-3">
+            <span className="h-6 w-6 animate-spin rounded-full border-2 border-ink-600 border-t-glow" />
+            <p className="text-sm text-mist">
+              {phase === "connecting" && "Check your wallet to connect…"}
+              {phase === "restoring" && "Restoring your saved session…"}
+              {phase === "signing" && "Sign the message in your wallet…"}
+              {phase === "checking" && "Checking registry…"}
+              {phase === "registering" && "Confirm the transaction…"}
+            </p>
+          </div>
         )}
 
         {phase === "register" && (
-          <div className="text-left rounded-xl border border-white/10 bg-white/2 p-6">
-            <h2 className="text-lg font-semibold text-white mb-2">Register Privacy Keys</h2>
-            <p className="text-sm text-neutral-500 mb-4">
-              One-time on-chain registration so others can send to you by your ETH address.
+          <div className="mt-8 rounded-2xl border border-ink-700 bg-ink-900/40 p-6 text-left">
+            <h2 className="font-display text-lg font-bold text-white">
+              Register privacy keys
+            </h2>
+            <p className="mt-2 text-sm text-mist">
+              One-time on-chain step so others can send to your ETH address.
             </p>
-            {error && <p className="text-error text-sm mb-3">{error}</p>}
+            {error && <p className="mt-3 text-sm text-error">{error}</p>}
             <button
               type="button"
               onClick={handleRegister}
               disabled={!currentConfig}
-              className="w-full py-3.5 px-6 rounded-xl text-sm font-medium bg-white text-black hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
+              className="mt-4 w-full rounded-xl bg-glow px-6 py-3 text-sm font-semibold text-ink-950 hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Register
             </button>
           </div>
         )}
 
-        {phase === "registering" && (
-          <p className="text-neutral-500 text-sm">Confirm the transaction in your wallet…</p>
-        )}
-
         {phase === "done" && (
-          <p className="text-neutral-400 text-sm">Setup complete. Entering dashboard…</p>
+          <p className="mt-8 text-sm text-glow">Setup complete — entering dashboard…</p>
         )}
 
         {phase === "error" && error && (
-          <div className="mt-4 p-4 rounded-xl border border-red-500/30 bg-red-500/5 text-red-400 text-sm text-left">
+          <div className="mt-6 rounded-xl border border-red-500/30 bg-red-950/20 px-4 py-3 text-left text-sm text-red-200">
             {error}
           </div>
         )}
 
         {txHash && (
-          <p className="mt-4 text-neutral-600 text-xs font-mono break-all">{txHash}</p>
+          <p className="mt-4 font-mono text-xs text-mist/60 break-all">{txHash}</p>
         )}
       </div>
     </div>
