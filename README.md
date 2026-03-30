@@ -15,6 +15,8 @@
   &nbsp;·&nbsp;
   <a href="https://docs.opaque.cash">Docs</a>
   &nbsp;·&nbsp;
+  <a href="https://docs.opaque.cash/playground">Playground</a>
+  &nbsp;·&nbsp;
   <a href="https://youtu.be/NAo7j0-Yqa8">Demo</a>
   <br /><br />
   <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/license-MIT-5c7cfa?style=flat-square" alt="MIT License" /></a>
