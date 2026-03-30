@@ -15,6 +15,7 @@ import {
 import { useGhostAnnouncementStore } from "../store/ghostAnnouncementStore";
 import { useGhostAddressStore } from "../store/ghostAddressStore";
 import { useWatchlistStore } from "../hooks/useWatchlist";
+import { ModalShell } from "./ModalShell";
 
 type GhostAnnounceModalProps = {
   open: boolean;
@@ -234,21 +235,21 @@ export function GhostAnnounceModal({
   if (!open) return null;
 
   return (
-    <div
-      className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-black/70"
-      onClick={() => !running && onClose()}
+    <ModalShell
+      open
+      title="Announce manual ghost"
+      description="Publish an on-chain announcement so other devices and indexers can discover this address using your keys."
+      onClose={onClose}
+      closeOnBackdrop={!running}
+      maxWidthClassName="max-w-lg"
+      contentClassName="max-h-[90vh] overflow-y-auto"
     >
-      <div
-        className="card max-w-lg w-full max-h-[90vh] overflow-y-auto p-6 shadow-xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <h3 className="text-lg font-semibold text-white mb-2">Announce manual ghost on-chain</h3>
-        <p className="text-sm text-neutral-400 mb-3">
+        <p className="text-sm text-mist mb-3">
           Right now this ghost address is only tracked in <strong className="text-neutral-200">this browser</strong>.
           Standard scanners and other devices cannot see it because no{" "}
           <strong className="text-neutral-200">ERC-5564 announcement</strong> was published when you received funds.
         </p>
-        <ul className="text-sm text-neutral-500 list-disc pl-5 space-y-1 mb-4">
+        <ul className="text-sm text-mist list-disc pl-5 space-y-1 mb-4">
           <li>
             Publishing an announcement lets indexers and Opaque on other devices discover this address using your keys,
             so you can <strong className="text-neutral-300">view and spend</strong> the funds anywhere—not only locally.
@@ -261,44 +262,44 @@ export function GhostAnnounceModal({
         </ul>
 
         {!gasTankInitialized && (
-          <div className="mb-4 p-3 rounded-lg border border-amber-500/40 bg-amber-500/10 text-amber-200/95 text-sm">
+          <div className="mb-4 p-3 rounded-xl border border-amber-500/40 bg-amber-500/10 text-amber-200/95 text-sm">
             <p className="mb-2">
               Initialize your <strong>Gas Tank</strong> and fund it with enough native token to cover one small transfer
               plus the announcement transaction.
             </p>
-            <Link to="/gas-tank" className="text-white underline font-medium" onClick={onClose}>
+            <Link to="/gas-tank" className="text-glow underline decoration-glow/40 underline-offset-2 hover:decoration-glow font-medium" onClick={onClose}>
               Open Gas Tank setup →
             </Link>
           </div>
         )}
 
         {gasTankInitialized && preflightError && (
-          <div className="mb-4 p-3 rounded-lg border border-error/30 bg-error/10 text-error text-sm">
+          <div className="mb-4 p-3 rounded-xl border border-error/30 bg-error/10 text-error text-sm">
             {preflightError}
           </div>
         )}
 
         {gasTankInitialized && !preflightError && minTankWei != null && tankBalanceWei != null && !tankSufficient && (
-          <div className="mb-4 p-3 rounded-lg border border-amber-500/40 bg-amber-500/10 text-amber-200/95 text-sm">
+          <div className="mb-4 p-3 rounded-xl border border-amber-500/40 bg-amber-500/10 text-amber-200/95 text-sm">
             <p>
               Gas Tank balance <strong>{formatEther(tankBalanceWei)} ETH</strong> is below the estimated need of{" "}
               <strong>{formatEther(minTankWei)} ETH</strong>. Add funds to the Gas Tank and reopen this flow.
             </p>
-            <Link to="/gas-tank" className="mt-2 inline-block text-white underline font-medium" onClick={onClose}>
+            <Link to="/gas-tank" className="mt-2 inline-block text-glow underline decoration-glow/40 underline-offset-2 hover:decoration-glow font-medium" onClick={onClose}>
               Fund Gas Tank →
             </Link>
           </div>
         )}
 
         {announcerPreview && (
-          <p className="text-xs text-neutral-600 font-mono break-all mb-2">
+          <p className="text-xs text-mist/70 font-mono break-all mb-2">
             Announcer address: {announcerPreview}
           </p>
         )}
-        {topUpHint && <p className="text-xs text-neutral-500 mb-4">{topUpHint}</p>}
+        {topUpHint && <p className="text-xs text-mist mb-4">{topUpHint}</p>}
 
         <div className="mb-4">
-          <p className="text-xs text-neutral-500 uppercase tracking-wide mb-2">Flow</p>
+          <p className="text-xs text-mist/70 uppercase tracking-wide mb-2">Flow</p>
           <ProtocolStepper
             steps={
               steps.length > 0
@@ -319,7 +320,7 @@ export function GhostAnnounceModal({
             type="button"
             disabled={running}
             onClick={onClose}
-            className="px-3 py-1.5 rounded-lg text-sm btn-secondary"
+            className="px-4 py-2 rounded-xl text-sm font-medium text-mist border border-ink-600 bg-ink-950/30 hover:border-glow/30 hover:text-white transition-colors disabled:opacity-40"
           >
             {steps.some((s) => s.status === "done") ? "Close" : "Cancel"}
           </button>
@@ -327,12 +328,11 @@ export function GhostAnnounceModal({
             type="button"
             disabled={!canStart}
             onClick={() => void handleStart()}
-            className="px-3 py-1.5 rounded-lg text-sm font-medium bg-white text-black disabled:opacity-40 disabled:cursor-not-allowed hover:enabled:opacity-90"
+            className="px-4 py-2 rounded-xl text-sm font-semibold bg-glow text-ink-950 disabled:opacity-40 disabled:cursor-not-allowed hover:enabled:opacity-90"
           >
             {running ? "Working…" : "Start on-chain announcement"}
           </button>
         </div>
-      </div>
-    </div>
+    </ModalShell>
   );
 }
