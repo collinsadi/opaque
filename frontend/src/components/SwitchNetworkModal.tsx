@@ -5,6 +5,7 @@
 
 import { useState, type ReactNode } from "react";
 import { getChain } from "../lib/chain";
+import { ModalShell } from "./ModalShell";
 
 const SEPOLIA_CHAIN_ID = 11155111;
 const SEPOLIA_HEX = "0xaa36a7";
@@ -79,46 +80,32 @@ export function SwitchNetworkModal({
   const sepoliaChain = getChain(SEPOLIA_CHAIN_ID);
 
   return (
-    <div
-      className="rounded-2xl border border-white/10 p-6 shadow-2xl bg-neutral-900/95 backdrop-blur-xl space-y-4"
-      onClick={(e) => e.stopPropagation()}
+    <ModalShell
+      open
+      title={title}
+      description={description}
+      onClose={() => onClose?.()}
+      closeOnBackdrop={Boolean(showClose)}
+      maxWidthClassName="max-w-md"
     >
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h2 className="text-lg font-semibold text-white">{title}</h2>
-          {description != null && (
-            <div className="text-neutral-400 text-sm mt-1">{description}</div>
-          )}
-        </div>
-        {showClose && onClose && (
-          <button
-            type="button"
-            onClick={onClose}
-            className="text-neutral-500 hover:text-white p-1 -m-1 rounded"
-            aria-label="Close"
-          >
-            ×
-          </button>
-        )}
-      </div>
       <div className="flex flex-col gap-2">
         <button
           type="button"
           onClick={handleSwitchSepolia}
           disabled={switching}
-          className="w-full py-2.5 px-4 rounded-lg text-sm font-medium bg-white/10 hover:bg-white/20 text-white border border-white/20 disabled:opacity-50 flex items-center justify-center gap-2"
+          className="w-full rounded-xl bg-glow px-4 py-2.5 text-sm font-semibold text-ink-950 hover:opacity-90 disabled:opacity-50 flex items-center justify-center gap-2"
         >
           {switching ? (
-            <span className="inline-block w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" aria-hidden />
+            <span className="inline-block w-4 h-4 border-2 border-ink-600 border-t-ink-950 rounded-full animate-spin" aria-hidden />
           ) : null}
           Switch to {sepoliaChain.name}
         </button>
       </div>
       {addError && (
-        <p className="text-sm text-red-400 mt-2" role="alert">
+        <p className="text-sm text-red-300 mt-2" role="alert">
           {addError}
         </p>
       )}
-    </div>
+    </ModalShell>
   );
 }
