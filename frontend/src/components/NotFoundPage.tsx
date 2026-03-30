@@ -11,7 +11,7 @@ export function NotFoundPage() {
         This address does not exist.
       </p>
       <Link
-        to="/"
+        to="/app"
         className="px-4 py-2 rounded-lg text-sm font-medium border border-border text-neutral-400 hover:text-white hover:border-neutral-600 transition-colors"
       >
         Return to Vault
