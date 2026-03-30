@@ -31,6 +31,8 @@ type ExplorerLinkProps = {
   /** Truncation: characters to show at start and end (default 10 and 8 for address-like) */
   startChars?: number;
   endChars?: number;
+  /** If true, clicking the address text copies instead of opening explorer */
+  copyOnAddressClick?: boolean;
 };
 
 export function ExplorerLink({
@@ -40,8 +42,10 @@ export function ExplorerLink({
   className = "",
   startChars = 10,
   endChars = 8,
+  copyOnAddressClick = false,
 }: ExplorerLinkProps) {
   const [hover, setHover] = useState(false);
+  const [copied, setCopied] = useState(false);
   const url =
     type === "tx"
       ? chainId != null ? getExplorerTxUrl(chainId, value) : null
@@ -53,6 +57,46 @@ export function ExplorerLink({
     return (
       <span className={`font-mono text-neutral-400 ${className}`} title={value}>
         {display}
+      </span>
+    );
+  }
+
+  const handleCopyAddress = async () => {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1400);
+    } catch {
+      // ignore clipboard failures
+    }
+  };
+
+  if (copyOnAddressClick) {
+    return (
+      <span
+        className={`inline-flex items-center gap-1 font-mono text-neutral-400 transition-colors ${className}`}
+        title={value}
+        onMouseEnter={() => setHover(true)}
+        onMouseLeave={() => setHover(false)}
+      >
+        <button
+          type="button"
+          onClick={handleCopyAddress}
+          className="tabular-nums text-left hover:text-white transition-colors"
+          title={copied ? "Copied!" : "Click to copy"}
+        >
+          {copied ? "Copied!" : display}
+        </button>
+        <a
+          href={url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className={`inline-flex text-neutral-500 transition-colors ${hover ? "text-neutral-300" : ""}`}
+          aria-label="Open in explorer"
+          title="Open in explorer"
+        >
+          <LaunchIcon />
+        </a>
       </span>
     );
   }
