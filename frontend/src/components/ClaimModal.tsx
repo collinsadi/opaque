@@ -4,6 +4,7 @@ import type { TokenInfo } from "../lib/tokens";
 import { ProtocolStepper } from "./ProtocolStepper";
 import type { ProtocolStep } from "./ProtocolStepper";
 import { ExplorerLink } from "./ExplorerLink";
+import { ModalShell } from "./ModalShell";
 
 type ClaimModalProps = {
   tx: FoundTx;
@@ -58,37 +59,31 @@ export function ClaimModal({
     })();
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80"
-      onClick={onClose}
+    <ModalShell
+      open
+      title="Withdraw"
+      description="Sweep funds from a one-time stealth address."
+      onClose={onClose}
+      closeOnBackdrop={!claiming}
+      maxWidthClassName="max-w-md"
     >
-      <div
-        className="card max-w-md w-full border-neutral-800"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <h3 className="text-lg font-semibold text-white mb-1">
-          Claim
-        </h3>
-        <p className="text-sm text-neutral-500 mb-5">
-          Withdraw from your one-time stealth address.
-        </p>
 
-        <div className="mb-4 p-3 rounded-lg bg-neutral-900 border border-border font-mono text-xs text-neutral-400">
+        <div className="mb-4 p-3 rounded-xl bg-ink-950/40 border border-ink-700 font-mono text-xs text-mist">
           <div className="flex justify-between items-center gap-2">
-            <ExplorerLink chainId={chainId} value={tx.address} type="address" className="text-neutral-300" />
+            <ExplorerLink chainId={chainId} value={tx.address} type="address" className="text-slate-200" />
             <span className="text-success font-medium shrink-0">{amountStr} {asset.symbol}</span>
           </div>
         </div>
 
-        <div className="space-y-2 mb-5 p-3 rounded-lg bg-neutral-950 border border-border font-mono text-xs text-neutral-500">
-          <p className="text-neutral-400 font-medium">Protocol steps</p>
+        <div className="space-y-2 mb-5 p-3 rounded-xl bg-ink-950/30 border border-ink-700 font-mono text-xs text-mist/90">
+          <p className="text-slate-200 font-medium">Protocol steps</p>
           <p>1. Reconstruct private key from spend key + shared secret</p>
           <p>2. Create independent transaction signed by stealth key</p>
           <p>3. On-chain sender = stealth address, no identity link</p>
         </div>
 
         {asset.address !== null && (gaslessEligibilityChecking || gaslessEligible || gaslessCheckComplete) && (
-          <div className={`mb-4 p-3 rounded-lg border text-sm ${gaslessCheckComplete && !gaslessEligible ? "border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400" : "border-success/30 bg-success/10 text-success"}`}>
+          <div className={`mb-4 p-3 rounded-xl border text-sm ${gaslessCheckComplete && !gaslessEligible ? "border-amber-500/30 bg-amber-500/10 text-amber-200" : "border-success/30 bg-success/10 text-success"}`}>
             {gaslessEligibilityChecking ? (
               <span>Checking gasless eligibility…</span>
             ) : gaslessEligible ? (
@@ -100,7 +95,7 @@ export function ClaimModal({
         )}
 
         <div className="mb-4">
-          <label className="block text-sm text-neutral-500 mb-1.5 font-mono">
+          <label className="block text-sm text-mist mb-1.5 font-mono">
             Destination
           </label>
           <input
@@ -114,27 +109,27 @@ export function ClaimModal({
 
         {/* Privacy meter */}
         <div className="mb-5">
-          <p className="text-xs text-neutral-600 mb-1.5 font-mono">Privacy check</p>
+          <p className="text-xs text-mist/70 mb-1.5 font-mono">Privacy check</p>
           {isSameAsMain ? (
-            <div className="p-3 rounded-lg bg-neutral-900 border border-warning/20 text-warning text-sm">
+            <div className="p-3 rounded-xl bg-ink-950/40 border border-warning/20 text-warning text-sm">
               Sending to your connected wallet links your identity to this transaction. Use a fresh address.
             </div>
           ) : (
-            <div className="p-3 rounded-lg bg-neutral-900 border border-success/20 text-success text-sm">
+            <div className="p-3 rounded-xl bg-ink-950/40 border border-success/20 text-success text-sm">
               Destination differs from connected wallet — good for privacy.
             </div>
           )}
         </div>
 
         {error && (
-          <div className="mb-4 p-3 rounded-lg bg-neutral-900 border border-error/30 text-error text-sm">
+          <div className="mb-4 p-3 rounded-xl bg-error/10 border border-error/30 text-error text-sm">
             {error}
           </div>
         )}
 
         {claiming && withdrawalSteps.length > 0 && (
           <div className="mb-4">
-            <p className="text-xs text-neutral-600 mb-2 font-mono">Progress</p>
+            <p className="text-xs text-mist/70 mb-2 font-mono">Progress</p>
             <ProtocolStepper steps={withdrawalSteps} />
           </div>
         )}
@@ -144,7 +139,7 @@ export function ClaimModal({
             type="button"
             onClick={onClose}
             disabled={claiming}
-            className="px-4 py-2 rounded-lg text-sm btn-secondary disabled:opacity-40"
+            className="px-4 py-2 rounded-xl text-sm font-medium text-mist border border-ink-600 bg-ink-950/30 hover:border-glow/30 hover:text-white transition-colors disabled:opacity-40"
           >
             Cancel
           </button>
@@ -152,12 +147,11 @@ export function ClaimModal({
             type="button"
             onClick={onConfirm}
             disabled={claiming || !destinationTrimmed}
-            className={`px-4 py-2 rounded-lg text-sm font-medium btn-primary ${claiming ? "loading" : ""}`}
+            className={`px-4 py-2 rounded-xl text-sm font-semibold bg-glow text-ink-950 hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed ${claiming ? "loading" : ""}`}
           >
             {claiming ? "Claiming…" : "Confirm"}
           </button>
         </div>
-      </div>
-    </div>
+    </ModalShell>
   );
 }
