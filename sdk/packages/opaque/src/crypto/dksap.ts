@@ -62,10 +62,23 @@ export function parseStealthMetaAddress(metaHex: Hex): {
   };
 }
 
+function assertCompressedPubkey33(name: string, key: Uint8Array): void {
+  if (key.length !== 33) {
+    throw new Error(`Opaque: ${name} must be 33 bytes (compressed), got ${key.length}`);
+  }
+  const prefix = key[0];
+  if (prefix !== 0x02 && prefix !== 0x03) {
+    throw new Error(
+      `Opaque: ${name} must start with 0x02 or 0x03 (compressed), got 0x${prefix.toString(16)}`,
+    );
+  }
+}
+
 function sharedSecretSender(
   ephemeralPriv: Uint8Array,
   viewPubKey: Uint8Array,
 ): Uint8Array {
+  assertCompressedPubkey33("viewPubKey", viewPubKey);
   const P = CURVE.ProjectivePoint.fromHex(viewPubKey);
   const scalar = bytesToBigInt(ephemeralPriv) % CURVE.CURVE.n;
   if (scalar === 0n) throw new Error("Invalid ephemeral key");
@@ -89,6 +102,7 @@ function stealthPointAndAddress(
   const sHMod = sHBig % n;
   if (sHMod === 0n) throw new Error("Invalid scalar from hash");
   const S_h = CURVE.ProjectivePoint.BASE.multiply(sHMod);
+  assertCompressedPubkey33("spendPubKey", spendPubKey);
   const P_spend = CURVE.ProjectivePoint.fromHex(spendPubKey);
   const P_stealth = P_spend.add(S_h);
   const uncompressed = P_stealth.toRawBytes(false);

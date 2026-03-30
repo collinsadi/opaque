@@ -1,14 +1,9 @@
-import type { Hex } from "viem";
+import { hexToBytes, type Hex } from "viem";
 import type { AnnouncementJsonRecord } from "@opaquecash/stealth-core";
 import type { IndexerAnnouncement } from "../types/indexer.js";
 
-function hexToBytes(h: Hex): number[] {
-  const s = h.startsWith("0x") ? h.slice(2) : h;
-  const out: number[] = [];
-  for (let i = 0; i < s.length; i += 2) {
-    out.push(Number.parseInt(s.slice(i, i + 2), 16));
-  }
-  return out;
+function toNumberArray(h: Hex): number[] {
+  return Array.from(hexToBytes(h));
 }
 
 /**
@@ -23,11 +18,35 @@ export function indexerAnnouncementToScannerRecord(
       `Invalid blockNumber on announcement ${row.transactionHash}: ${row.blockNumber}`,
     );
   }
+  const epkBytes = hexToBytes(row.etherealPublicKey);
+  if (epkBytes.length !== 33) {
+    throw new Error(
+      `Invalid etherealPublicKey on announcement ${row.transactionHash}: expected 33-byte compressed secp256k1 pubkey, got ${epkBytes.length} bytes`,
+    );
+  }
+  if (epkBytes[0] !== 0x02 && epkBytes[0] !== 0x03) {
+    throw new Error(
+      `Invalid etherealPublicKey on announcement ${row.transactionHash}: expected compressed prefix 0x02 or 0x03, got 0x${epkBytes[0].toString(16)}`,
+    );
+  }
+
+  const vtRaw = (row as any)?.viewTag as unknown;
+  const vt =
+    typeof vtRaw === "number"
+      ? vtRaw
+      : typeof vtRaw === "string"
+        ? Number.parseInt(vtRaw, 10)
+        : Number(vtRaw);
+  if (!Number.isFinite(vt) || !Number.isInteger(vt) || vt < 0 || vt > 255) {
+    throw new Error(
+      `Invalid viewTag on announcement ${row.transactionHash}: expected integer 0..255, got ${String(vtRaw)}`,
+    );
+  }
   return {
     stealthAddress: row.stealthAddress,
-    viewTag: row.viewTag,
-    ephemeralPubKey: hexToBytes(row.etherealPublicKey),
-    metadata: hexToBytes(row.metadata),
+    viewTag: vt,
+    ephemeralPubKey: Array.from(epkBytes),
+    metadata: toNumberArray(row.metadata),
     txHash: row.transactionHash,
     blockNumber: bn,
   };

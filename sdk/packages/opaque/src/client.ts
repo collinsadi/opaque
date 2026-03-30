@@ -19,6 +19,8 @@ import {
   getStealthMetaAddress as readRegistryMetaAddress,
 } from "@opaquecash/stealth-chain";
 import {
+  checkAnnouncement,
+  checkAnnouncementViewTag,
   encodeAttestationMetadata,
   initStealthWasm,
   reconstructSigningKey,
@@ -430,30 +432,40 @@ export class OpaqueClient {
     rows: IndexerAnnouncement[],
   ): Promise<OwnedStealthOutput[]> {
     if (rows.length === 0) return [];
-    const json = indexerAnnouncementsToScannerJson(rows);
-    const out = scanAttestationsJson(
-      this.wasm,
-      json,
-      this.viewingKey,
-      this.spendPubKey,
-    );
-    const list = JSON.parse(out) as ScanAttestationRow[];
     const owned: OwnedStealthOutput[] = [];
-    for (const att of list) {
-      const row = rows.find(
-        (r) =>
-          r.transactionHash.toLowerCase() === att.tx_hash.toLowerCase() &&
-          r.stealthAddress.toLowerCase() === att.stealth_address.toLowerCase(),
+    for (const row of rows) {
+      const eph = hexToBytes(row.etherealPublicKey);
+      if (eph.length !== 33) continue;
+
+      const vtRaw = (row as any)?.viewTag as unknown;
+      const vt =
+        typeof vtRaw === "number"
+          ? vtRaw
+          : typeof vtRaw === "string"
+            ? Number.parseInt(vtRaw, 10)
+            : Number(vtRaw);
+      if (!Number.isFinite(vt) || !Number.isInteger(vt) || vt < 0 || vt > 255) continue;
+
+      const tagResult = checkAnnouncementViewTag(this.wasm, vt, this.viewingKey, eph);
+      if (tagResult === "NoMatch") continue;
+
+      const ok = checkAnnouncement(
+        this.wasm,
+        row.stealthAddress,
+        vt,
+        this.viewingKey,
+        this.spendPubKey,
+        eph,
       );
-      const epk = (`0x${att.ephemeral_pubkey.map((b) => b.toString(16).padStart(2, "0")).join("")}`) as Hex;
+      if (!ok) continue;
+
       owned.push({
-        stealthAddress: getAddress(att.stealth_address as Address),
-        transactionHash: att.tx_hash as Hex,
-        blockNumber: att.block_number,
-        logIndex: row?.logIndex ?? 0,
-        viewTag: row?.viewTag ?? 0,
-        ephemeralPublicKey: epk,
-        attestationId: att.attestation_id,
+        stealthAddress: getAddress(row.stealthAddress),
+        transactionHash: row.transactionHash,
+        blockNumber: Number(row.blockNumber),
+        logIndex: row.logIndex,
+        viewTag: vt,
+        ephemeralPublicKey: row.etherealPublicKey,
       });
     }
     return owned;
