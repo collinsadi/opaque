@@ -1,149 +1,216 @@
-/**
- * Landing for Opaque: EIP-5564 stealth + PSR protocol infrastructure.
- * Shown before "Enter the Vault" for first-time visitors.
- */
-
 import { Footer } from "./Footer";
 
 type LandingPageProps = {
   onEnterVault: () => void;
 };
 
-function BentoTile({
-  className = "",
-  label,
-  title,
-  body,
-}: {
-  className?: string;
-  label: string;
-  title: string;
-  body: string;
-}) {
-  return (
-    <div
-      className={`rounded-2xl border border-white/8 bg-white/3 p-5 md:p-6 flex flex-col justify-between min-h-[140px] hover:border-white/12 hover:bg-white/5 transition-colors duration-300 ${className}`}
-    >
-      <p className="text-[10px] uppercase tracking-[0.2em] text-neutral-600 mb-2">{label}</p>
-      <div>
-        <p className="text-sm font-semibold text-white mb-1.5">{title}</p>
-        <p className="text-xs text-neutral-500 leading-relaxed">{body}</p>
-      </div>
-    </div>
-  );
-}
+const FEATURES = [
+  {
+    icon: "↕",
+    accent: "glow" as const,
+    title: "Stealth payments",
+    body: "Senders derive a fresh one-time address from your meta-address. Every incoming transfer lands at a unique address only you control.",
+  },
+  {
+    icon: "⌘",
+    accent: "glow" as const,
+    title: "On-chain registry",
+    body: "Optionally link your 0x… address to a meta-address so payers can resolve you without sharing a long key.",
+  },
+  {
+    icon: "◉",
+    accent: "glow" as const,
+    title: "Announcement stream",
+    body: "Compact on-chain logs with view tags let your wallet discover which outputs are yours—without revealing who is scanning.",
+  },
+  {
+    icon: "✦",
+    accent: "flare" as const,
+    title: "Proof-backed reputation",
+    body: "Optional PSR layer: Groth16 proofs + Merkle roots + nullifiers let apps verify traits without making wallet identity public.",
+  },
+  {
+    icon: "⬡",
+    accent: "glow" as const,
+    title: "Browser-native crypto",
+    body: "Rust → WASM for secp256k1 scanning, snarkjs + Circom for ZK proofs—runs entirely on-device with no server round-trips.",
+  },
+  {
+    icon: "⛓",
+    accent: "glow" as const,
+    title: "Open contracts",
+    body: "Registry, announcer, and Groth16 verifiers deployed on Sepolia. No proprietary backend—integrators use the same shared infra.",
+  },
+] as const;
+
+const STEPS = [
+  {
+    n: "01",
+    title: "Initialize",
+    body: "Sign a message to derive stealth keys locally. Nothing leaves your device.",
+  },
+  {
+    n: "02",
+    title: "Register",
+    body: "One-time on-chain step: link your Ethereum address to your meta-address.",
+  },
+  {
+    n: "03",
+    title: "Receive",
+    body: "Senders fund a stealth address and publish an announcement. You scan locally to claim.",
+  },
+  {
+    n: "04",
+    title: "Prove (optional)",
+    body: "Generate a ZK proof scoped to an action—verify on-chain without revealing your wallet.",
+  },
+] as const;
 
 export function LandingPage({ onEnterVault }: LandingPageProps) {
   return (
-    <div className="min-h-dvh flex flex-col bg-black text-white relative overflow-x-hidden">
-      {/* Ambient — clipped so blurs don’t extend past viewport width; page scrolls vertically */}
-      <div className="absolute inset-0 overflow-x-hidden pointer-events-none" aria-hidden>
+    <div className="min-h-dvh flex flex-col bg-ink-950 bg-grid-fade bg-size-grid text-white overflow-x-hidden">
+      {/* ── Hero ── */}
+      <section className="relative flex flex-col items-center text-center px-5 sm:px-8 pt-20 sm:pt-28 md:pt-36 pb-20 md:pb-28">
         <div
-          className="absolute inset-x-0 top-0 h-px"
-          style={{ background: "linear-gradient(90deg, transparent, rgba(255,255,255,0.08), transparent)" }}
-        />
-        <div
-          className="absolute -top-32 right-0 w-[min(55vw,520px)] h-[min(55vh,480px)] opacity-90"
+          className="pointer-events-none absolute inset-0"
+          aria-hidden
           style={{
             background:
-              "radial-gradient(ellipse at 70% 20%, rgba(255,255,255,0.04) 0%, transparent 55%)",
-            filter: "blur(48px)",
+              "radial-gradient(ellipse 70% 50% at 50% 0%, rgba(94,234,212,0.06) 0%, transparent 70%)",
           }}
         />
-        <div
-          className="absolute bottom-0 left-0 w-[min(45vw,400px)] h-[40vh] opacity-60"
-          style={{
-            background: "radial-gradient(ellipse at 0% 100%, rgba(255,255,255,0.03) 0%, transparent 60%)",
-            filter: "blur(40px)",
-          }}
-        />
-      </div>
 
-      <div className="flex-1 relative z-10 w-full max-w-6xl mx-auto px-5 sm:px-8 pt-12 sm:pt-14 md:pt-20 lg:pt-24 pb-[max(2rem,env(safe-area-inset-bottom))] sm:pb-12 md:pb-20 lg:pb-24">
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 sm:gap-10 lg:gap-10 xl:gap-14 items-start">
-          {/* Left: narrative + CTA */}
-          <div className="lg:col-span-5 flex flex-col lg:sticky lg:top-24">
-            <div className="inline-flex items-center gap-2 self-start px-3 py-1.5 rounded-full border border-white/10 bg-white/4 text-[11px] text-neutral-400 mb-8">
-              <span
-                className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0"
-                style={{ boxShadow: "0 0 8px rgba(52,211,153,0.6)" }}
-              />
-              Sepolia · EIP-5564
-            </div>
+        <span className="relative inline-flex items-center gap-2 rounded-full border border-glow/25 bg-glow-muted/10 px-3.5 py-1 text-xs font-medium text-glow mb-6">
+          <span className="h-1.5 w-1.5 rounded-full bg-glow" aria-hidden />
+          Sepolia · EIP-5564
+        </span>
 
-            <p className="text-xs uppercase tracking-[0.25em] text-neutral-600 mb-4">Protocol infrastructure</p>
-            <h1
-              className="text-4xl sm:text-5xl lg:text-[2.75rem] xl:text-6xl font-bold tracking-tight leading-[1.05] mb-6"
+        <h1 className="relative font-display text-5xl sm:text-6xl md:text-7xl font-extrabold tracking-tight leading-[1.05]">
+          Private payments
+          <br />
+          <span className="text-mist">on Ethereum</span>
+          <span className="text-glow">.</span>
+        </h1>
+
+        <p className="relative mt-6 max-w-2xl text-lg text-mist leading-relaxed">
+          <strong className="text-white">Opaque</strong> gives every payment a fresh
+          receive address only you control, plus optional{" "}
+          <strong className="text-white">ZK-backed reputation</strong> when apps need
+          to verify you without seeing your wallet.
+        </p>
+
+        <div className="relative mt-8 flex flex-col sm:flex-row items-center gap-4">
+          <button
+            type="button"
+            onClick={onEnterVault}
+            className="group inline-flex items-center gap-2.5 rounded-xl bg-glow px-7 py-3.5 text-sm font-semibold text-ink-950 transition-all hover:shadow-[0_0_32px_rgba(94,234,212,0.25)] hover:scale-[1.02] active:scale-[0.98]"
+          >
+            Open wallet
+            <span className="transition-transform group-hover:translate-x-0.5" aria-hidden>
+              →
+            </span>
+          </button>
+          <a
+            href="https://docs.opaque.cash"
+            target="_blank"
+            rel="noreferrer noopener"
+            className="inline-flex items-center gap-2 rounded-xl border border-ink-600 px-6 py-3 text-sm font-semibold text-white transition-colors hover:border-glow/40 hover:text-glow"
+          >
+            Read the docs
+          </a>
+        </div>
+      </section>
+
+      {/* ── Features ── */}
+      <section className="mx-auto w-full max-w-6xl px-5 sm:px-8 pb-20 md:pb-28">
+        <div className="mb-10 text-center">
+          <p className="text-xs font-semibold uppercase tracking-widest text-glow">
+            Core primitives
+          </p>
+          <h2 className="mt-2 font-display text-3xl font-bold text-white sm:text-4xl">
+            What the protocol provides
+          </h2>
+        </div>
+
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {FEATURES.map((f) => (
+            <div
+              key={f.title}
+              className="group rounded-2xl border border-ink-600 bg-ink-900/25 p-6 transition-colors hover:border-glow/30"
             >
-              Stealth rails
-              <br />
-              <span className="text-neutral-500">you can build on.</span>
-            </h1>
-            <p className="text-neutral-500 text-base leading-relaxed mb-8 max-w-md">
-              Opaque is <span className="text-neutral-300">on-chain infrastructure</span> for{" "}
-              <span className="text-neutral-300">EIP-5564</span> stealth payments and{" "}
-              <span className="text-neutral-300">Programmable Stealth Reputation</span> — deployed contracts, a
-              shared announcement stream, verifiers, and a client-side proving stack so applications can offer
-              private receive and selective disclosure without running custodial infra.
-            </p>
-
-            <div className="flex flex-col sm:flex-row sm:items-center gap-4 mb-8">
-              <button
-                type="button"
-                onClick={onEnterVault}
-                className="group inline-flex items-center justify-center gap-2 px-7 py-3.5 rounded-xl text-sm font-semibold bg-white text-black transition-transform duration-200 hover:scale-[1.02] active:scale-[0.98]"
-                style={{ boxShadow: "0 0 36px rgba(255,255,255,0.07)" }}
+              <span
+                className={`mb-4 flex h-10 w-10 items-center justify-center rounded-xl text-lg ${
+                  f.accent === "flare"
+                    ? "bg-flare/15 text-flare"
+                    : "bg-glow-muted/30 text-glow"
+                }`}
+                aria-hidden
               >
-                Enter the Vault
-                <span className="transition-transform duration-200 group-hover:translate-x-0.5" aria-hidden>
-                  →
-                </span>
-              </button>
-              <p className="text-[11px] text-neutral-600 max-w-[200px] leading-snug">
-                Reference client on Sepolia — same contracts and circuits integrators use.
-              </p>
+                {f.icon}
+              </span>
+              <h3 className="font-display text-sm font-bold text-white">{f.title}</h3>
+              <p className="mt-2 text-sm leading-relaxed text-mist">{f.body}</p>
             </div>
+          ))}
+        </div>
+      </section>
 
-            <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-neutral-700 border-t border-white/6 pt-6">
-              <span>Registry &amp; announcer</span>
-              <span className="text-neutral-800">·</span>
-              <span>Groth16 verifiers</span>
-              <span className="text-neutral-800">·</span>
-              <span>Subgraph-indexed events</span>
-              <span className="text-neutral-800">·</span>
-              <span>WASM + Circom</span>
+      {/* ── How it works ── */}
+      <section className="mx-auto w-full max-w-4xl px-5 sm:px-8 pb-20 md:pb-28">
+        <div className="mb-10 text-center">
+          <p className="text-xs font-semibold uppercase tracking-widest text-glow">
+            Flow
+          </p>
+          <h2 className="mt-2 font-display text-3xl font-bold text-white sm:text-4xl">
+            How it works
+          </h2>
+        </div>
+
+        <div className="relative grid gap-6 sm:grid-cols-2">
+          {STEPS.map((s) => (
+            <div
+              key={s.n}
+              className="rounded-2xl border border-ink-700 bg-ink-900/30 p-6"
+            >
+              <span className="mb-3 inline-flex h-8 w-8 items-center justify-center rounded-lg bg-glow-muted/30 font-mono text-xs font-bold text-glow">
+                {s.n}
+              </span>
+              <h3 className="font-display text-base font-bold text-white">{s.title}</h3>
+              <p className="mt-2 text-sm leading-relaxed text-mist">{s.body}</p>
             </div>
-          </div>
+          ))}
+        </div>
+      </section>
 
-          {/* Right: bento */}
-          <div className="lg:col-span-7 grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4">
-            <BentoTile
-              className="sm:col-span-2 min-h-[160px]"
-              label="Stealth layer"
-              title="EIP-5564 rails"
-              body="Meta-address registry and a singleton announcer for standardized Announcement logs — the same stream wallets and indexers can subscribe to, without a proprietary backend."
-            />
-            <BentoTile
-              label="Reputation"
-              title="PSR verification"
-              body="Groth16 proofs, Merkle roots, and nullifiers on-chain so gates can trust selective-disclosure credentials composably."
-            />
-            <BentoTile
-              label="Verification"
-              title="OpaqueReputationVerifier"
-              body="Verifier contracts pin proof semantics; apps integrate by calling verify with public inputs and proof bytes."
-            />
-            <BentoTile
-              className="sm:col-span-2 min-h-[130px]"
-              label="Client stack"
-              title="Proving &amp; scanning in the browser"
-              body="Rust WASM for secp256k1 scanning and witness paths; snarkjs + Circom for proofs — suitable for embedding in dapps and wallet surfaces that connect to the same deployed infrastructure."
-            />
+      {/* ── Privacy callout ── */}
+      <section className="mx-auto w-full max-w-4xl px-5 sm:px-8 pb-20 md:pb-28">
+        <div className="rounded-3xl border border-ink-700 bg-ink-900/20 p-6 md:p-8">
+          <h2 className="font-display text-xl font-bold text-white md:text-2xl">
+            Privacy &amp; trade-offs
+          </h2>
+          <div className="mt-5 grid gap-4 md:grid-cols-2">
+            <div className="rounded-2xl border border-ink-600 bg-ink-950/40 p-5">
+              <p className="text-sm font-semibold text-glow font-display">What's private</p>
+              <ul className="mt-3 space-y-2 text-sm text-mist leading-relaxed">
+                <li>Incoming transfers are harder to link to a single deposit address.</li>
+                <li>PSR proofs reveal eligibility without revealing identity.</li>
+                <li>Stealth keys and scanning happen entirely on-device.</li>
+              </ul>
+            </div>
+            <div className="rounded-2xl border border-ink-600 bg-ink-950/40 p-5">
+              <p className="text-sm font-semibold text-flare font-display">What's not magic</p>
+              <ul className="mt-3 space-y-2 text-sm text-mist leading-relaxed">
+                <li>On-chain activity still leaks timing/amount patterns.</li>
+                <li>Local scanning means device-bound recovery constraints.</li>
+                <li>Experimental protocol — use testnets before relying on real value.</li>
+              </ul>
+            </div>
           </div>
         </div>
-      </div>
+      </section>
 
-      <div className="shrink-0 relative z-10 w-full pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+      {/* ── Footer ── */}
+      <div className="mt-auto shrink-0 w-full pb-[max(0.75rem,env(safe-area-inset-bottom))]">
         <Footer />
       </div>
     </div>
