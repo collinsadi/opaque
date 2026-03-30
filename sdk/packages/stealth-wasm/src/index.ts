@@ -12,6 +12,24 @@ import type { StealthWasmEntry, StealthWasmModule } from "./types.js";
 export type { StealthWasmEntry, StealthWasmModule } from "./types.js";
 
 let cached: StealthWasmModule | null = null;
+let debugLoggedScan = false;
+
+function shouldDebug(): boolean {
+  try {
+    // Opt-in flag for docs playground / debugging sessions.
+    return (globalThis as any)?.__OPAQUE_DEBUG === true;
+  } catch {
+    return false;
+  }
+}
+
+function debugByteLenFromHex(hex: unknown): number | null {
+  if (typeof hex !== "string") return null;
+  const h = hex.startsWith("0x") ? hex.slice(2) : hex;
+  if (h.length === 0) return 0;
+  if (h.length % 2 !== 0) return null;
+  return h.length / 2;
+}
 
 /**
  * Options for {@link initStealthWasm}.
@@ -195,8 +213,49 @@ export function scanAttestationsJson(
   viewPrivkeyBytes: Uint8Array,
   spendPubkeyBytes: Uint8Array,
 ): string {
+  if (shouldDebug() && !debugLoggedScan) {
+    debugLoggedScan = true;
+    try {
+      const parsed = JSON.parse(announcementsJson) as any[];
+      const first = Array.isArray(parsed) ? parsed[0] : undefined;
+      console.groupCollapsed("[opaque.debug] scanAttestationsJson input");
+      console.log("records:", Array.isArray(parsed) ? parsed.length : "non-array");
+      console.log("first.ephemeralPubKey type:", typeof first?.ephemeralPubKey);
+      console.log("first.metadata type:", typeof first?.metadata);
+      console.log("first.ephemeralPubKey byteLen (hex):", debugByteLenFromHex(first?.ephemeralPubKey));
+      console.log("first.metadata byteLen (hex):", debugByteLenFromHex(first?.metadata));
+      console.groupEnd();
+    } catch (e) {
+      console.warn("[opaque.debug] scanAttestationsJson JSON.parse failed", e);
+    }
+  }
+
+  const coerced = coerceAnnouncementsJsonForWasm(announcementsJson);
+  if (shouldDebug()) {
+    try {
+      const parsed = JSON.parse(coerced) as any[];
+      const first = Array.isArray(parsed) ? parsed[0] : undefined;
+      console.groupCollapsed("[opaque.debug] scanAttestationsJson coerced");
+      console.log("coercedChanged:", coerced !== announcementsJson);
+      console.log("first.ephemeralPubKey type:", typeof first?.ephemeralPubKey);
+      console.log("first.metadata type:", typeof first?.metadata);
+      console.log(
+        "first.ephemeralPubKey byteLen (hex):",
+        debugByteLenFromHex(first?.ephemeralPubKey),
+      );
+      console.log("first.metadata byteLen (hex):", debugByteLenFromHex(first?.metadata));
+      console.log(
+        "first.ephemeralPubKey prefix:",
+        typeof first?.ephemeralPubKey === "string" ? first.ephemeralPubKey.slice(0, 6) : null,
+      );
+      console.groupEnd();
+    } catch (e) {
+      console.warn("[opaque.debug] scanAttestationsJson coerced JSON.parse failed", e);
+    }
+  }
+
   return wasm.scan_attestations_wasm(
-    coerceAnnouncementsJsonForWasm(announcementsJson),
+    coerced,
     viewPrivkeyBytes,
     spendPubkeyBytes,
   );
