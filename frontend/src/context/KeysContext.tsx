@@ -13,6 +13,7 @@ import {
   stealthMetaAddressToHex,
 } from "../lib/stealth";
 import type { MasterKeys } from "../lib/stealthLifecycle";
+import { clearSignatureSession } from "../lib/signatureSession";
 
 type KeysState = {
   /** Stealth meta-address (0x + 66 hex chars) to share with senders */
@@ -61,6 +62,7 @@ export function KeysProvider({ children }: { children: ReactNode }) {
 
   const clearKeys = useCallback(() => {
     console.log("🔑 [Opaque] Clearing keys (logout)");
+    clearSignatureSession();
     setState({ stealthMetaAddressHex: null, isSetup: false, masterKeys: null });
   }, []);
 
