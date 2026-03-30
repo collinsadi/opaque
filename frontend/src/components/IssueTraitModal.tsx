@@ -21,6 +21,8 @@ import { STEALTH_ANNOUNCER_ABI, SCHEME_ID_SECP256K1 } from "../lib/contracts";
 import { getConfigForChain } from "../contracts/contract-config";
 import { useWallet } from "../hooks/useWallet";
 import { KNOWN_TRAITS } from "../lib/reputation";
+import { ModalShell } from "./ModalShell";
+import { useTxHistoryStore } from "../store/txHistoryStore";
 
 type IssueTraitModalProps = {
   onClose: () => void;
@@ -47,6 +49,7 @@ function uint8ArrayToHex(arr: Uint8Array): `0x${string}` {
 
 export function IssueTraitModal({ onClose }: IssueTraitModalProps) {
   const { chainId } = useWallet();
+  const pushTx = useTxHistoryStore((s) => s.push);
   const [step, setStep] = useState<IssueStep>("form");
   const [recipientMeta, setRecipientMeta] = useState("");
   const [selectedTraitId, setSelectedTraitId] = useState<string>(KNOWN_TRAITS[0]?.id ?? "");
@@ -111,55 +114,57 @@ export function IssueTraitModal({ onClose }: IssueTraitModalProps) {
 
       await publicClient.waitForTransactionReceipt({ hash });
 
+      const traitLabel = useCustom
+        ? (customLabel.trim() || `Trait #${attestationId}`)
+        : (selectedTrait?.label ?? `Trait #${attestationId}`);
+      const recipientLabel =
+        recipientMeta.length > 14
+          ? `${recipientMeta.slice(0, 10)}…${recipientMeta.slice(-4)}`
+          : recipientMeta;
+      pushTx({
+        chainId,
+        kind: "trait",
+        counterparty: recipientLabel,
+        amountWei: "0",
+        tokenSymbol: "TRAIT",
+        tokenAddress: null,
+        amount: traitLabel,
+        txHash: hash,
+      });
+
       setTxHash(hash);
       setStep("success");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Transaction failed");
       setStep("error");
     }
-  }, [canSubmit, chainId, recipientMeta, attestationId]);
+  }, [canSubmit, chainId, recipientMeta, attestationId, pushTx, useCustom, customLabel, selectedTrait]);
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-md"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="issue-trait-title"
-      onClick={onClose}
+    <ModalShell
+      open
+      title={
+        step === "form"
+          ? "Issue trait"
+          : step === "confirming"
+            ? "Confirming…"
+            : step === "success"
+              ? "Trait issued"
+              : "Failed"
+      }
+      description={
+        step === "form"
+          ? "Publish an attestation announcement to a recipient meta-address."
+          : null
+      }
+      onClose={onClose}
+      closeOnBackdrop={step !== "confirming"}
+      maxWidthClassName="max-w-md"
     >
-      <div
-        className="max-w-md w-full rounded-2xl border border-neutral-700 bg-neutral-900 shadow-2xl overflow-hidden"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Header */}
-        <div className="px-6 pt-6 pb-4 border-b border-neutral-800">
-          <div className="flex items-center justify-between">
-            <h3 id="issue-trait-title" className="text-base font-semibold text-white">
-              {step === "form" && "Issue Trait"}
-              {step === "confirming" && "Confirming..."}
-              {step === "success" && "Trait Issued!"}
-              {step === "error" && "Failed"}
-            </h3>
-            <button
-              type="button"
-              onClick={onClose}
-              className="text-neutral-500 hover:text-white transition-colors p-1"
-              aria-label="Close"
-            >
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <line x1="18" y1="6" x2="6" y2="18" />
-                <line x1="6" y1="6" x2="18" y2="18" />
-              </svg>
-            </button>
-          </div>
-        </div>
-
-        {/* Body */}
-        <div className="px-6 py-5">
           {step === "form" && (
             <div>
               {/* Recipient meta-address */}
-              <label className="block text-xs font-medium text-neutral-400 mb-1.5">
+              <label className="block text-xs font-medium text-mist mb-1.5">
                 Recipient Stealth Meta-Address
               </label>
               <input
@@ -167,11 +172,11 @@ export function IssueTraitModal({ onClose }: IssueTraitModalProps) {
                 value={recipientMeta}
                 onChange={(e) => setRecipientMeta(e.target.value.trim())}
                 placeholder="0x02abc...def (132 hex chars)"
-                className="w-full px-3 py-2.5 rounded-lg bg-neutral-950 border border-neutral-800 text-sm text-white placeholder-neutral-600 focus:border-neutral-600 focus:outline-none font-mono text-[11px] mb-4"
+                className="w-full px-3 py-2.5 rounded-xl bg-ink-950/40 border border-ink-700 text-sm text-white placeholder-ink-600 focus:border-glow/30 focus:outline-none font-mono text-[11px] mb-4"
               />
 
               {/* Trait selection */}
-              <label className="block text-xs font-medium text-neutral-400 mb-1.5">
+              <label className="block text-xs font-medium text-mist mb-1.5">
                 Trait to Issue
               </label>
 
@@ -184,20 +189,20 @@ export function IssueTraitModal({ onClose }: IssueTraitModalProps) {
                       onClick={() => setSelectedTraitId(t.id)}
                       className={`w-full text-left px-3 py-2.5 rounded-lg border transition-colors ${
                         selectedTraitId === t.id
-                          ? "border-white/30 bg-white/5"
-                          : "border-neutral-800 bg-neutral-950/50 hover:border-neutral-700"
+                          ? "border-glow/35 bg-glow-muted/10"
+                          : "border-ink-700 bg-ink-950/30 hover:border-ink-600"
                       }`}
                     >
                       <div className="flex items-center justify-between">
                         <div>
                           <span className="text-sm text-white font-medium">{t.label}</span>
-                          <span className="text-[10px] text-neutral-500 ml-2">ID: {t.attestationId}</span>
+                          <span className="text-[10px] text-mist/70 ml-2">ID: {t.attestationId}</span>
                         </div>
                         {selectedTraitId === t.id && (
                           <span className="text-emerald-400 text-xs">✓</span>
                         )}
                       </div>
-                      <p className="text-[11px] text-neutral-500 mt-0.5">{t.description}</p>
+                      <p className="text-[11px] text-mist mt-0.5">{t.description}</p>
                     </button>
                   ))}
                 </div>
@@ -208,7 +213,7 @@ export function IssueTraitModal({ onClose }: IssueTraitModalProps) {
                     value={customLabel}
                     onChange={(e) => setCustomLabel(e.target.value)}
                     placeholder="Custom trait name"
-                    className="w-full px-3 py-2 rounded-lg bg-neutral-950 border border-neutral-800 text-sm text-white placeholder-neutral-600 focus:border-neutral-600 focus:outline-none"
+                    className="w-full px-3 py-2 rounded-xl bg-ink-950/40 border border-ink-700 text-sm text-white placeholder-ink-600 focus:border-glow/30 focus:outline-none"
                   />
                   <input
                     type="number"
@@ -216,7 +221,7 @@ export function IssueTraitModal({ onClose }: IssueTraitModalProps) {
                     onChange={(e) => setCustomAttestationId(e.target.value)}
                     placeholder="Attestation ID (number)"
                     min="1"
-                    className="w-full px-3 py-2 rounded-lg bg-neutral-950 border border-neutral-800 text-sm text-white placeholder-neutral-600 focus:border-neutral-600 focus:outline-none"
+                    className="w-full px-3 py-2 rounded-xl bg-ink-950/40 border border-ink-700 text-sm text-white placeholder-ink-600 focus:border-glow/30 focus:outline-none"
                   />
                 </div>
               )}
@@ -224,20 +229,20 @@ export function IssueTraitModal({ onClose }: IssueTraitModalProps) {
               <button
                 type="button"
                 onClick={() => setUseCustom(!useCustom)}
-                className="text-[11px] text-neutral-500 hover:text-neutral-300 transition-colors mb-4 block"
+                className="text-[11px] text-mist/70 hover:text-white transition-colors mb-4 block"
               >
                 {useCustom ? "← Back to known traits" : "Issue a custom trait →"}
               </button>
 
               {/* Summary */}
               {canSubmit && (
-                <div className="rounded-lg bg-neutral-950 border border-neutral-800 p-3 mb-4">
-                  <div className="text-[10px] text-neutral-600 mb-1">Will issue</div>
+                <div className="rounded-xl bg-ink-950/40 border border-ink-700 p-3 mb-4">
+                  <div className="text-[10px] text-mist/70 mb-1">Will issue</div>
                   <div className="text-xs text-white font-medium">
                     {useCustom ? (customLabel || `Custom #${customAttestationId}`) : selectedTrait?.label}
-                    <span className="text-neutral-500 ml-1">(ID: {attestationId})</span>
+                    <span className="text-mist/70 ml-1">(ID: {attestationId})</span>
                   </div>
-                  <div className="text-[10px] text-neutral-600 mt-1">
+                  <div className="text-[10px] text-mist/70 mt-1">
                     To: {recipientMeta.slice(0, 14)}...{recipientMeta.slice(-8)}
                   </div>
                 </div>
@@ -247,7 +252,7 @@ export function IssueTraitModal({ onClose }: IssueTraitModalProps) {
                 <button
                   type="button"
                   onClick={onClose}
-                  className="flex-1 px-4 py-2.5 rounded-lg text-sm font-medium text-neutral-400 border border-neutral-700 hover:border-neutral-600 hover:text-white transition-colors"
+                  className="flex-1 px-4 py-2.5 rounded-xl text-sm font-medium text-mist border border-ink-600 bg-ink-950/30 hover:border-glow/30 hover:text-white transition-colors"
                 >
                   Cancel
                 </button>
@@ -255,7 +260,7 @@ export function IssueTraitModal({ onClose }: IssueTraitModalProps) {
                   type="button"
                   onClick={handleIssue}
                   disabled={!canSubmit}
-                  className="flex-1 px-4 py-2.5 rounded-lg text-sm font-medium text-black bg-white hover:bg-neutral-200 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                  className="flex-1 px-4 py-2.5 rounded-xl text-sm font-semibold text-ink-950 bg-glow hover:opacity-90 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
                 >
                   Issue Trait
                 </button>
@@ -265,9 +270,9 @@ export function IssueTraitModal({ onClose }: IssueTraitModalProps) {
 
           {step === "confirming" && (
             <div className="text-center py-6">
-              <div className="w-12 h-12 mx-auto mb-4 border-2 border-white/20 border-t-white rounded-full animate-spin" aria-hidden />
+              <div className="w-12 h-12 mx-auto mb-4 border-2 border-ink-600 border-t-glow rounded-full animate-spin" aria-hidden />
               <p className="text-sm font-medium text-white mb-1">Sending announcement...</p>
-              <p className="text-[11px] text-neutral-500">Confirm the transaction in your wallet.</p>
+              <p className="text-[11px] text-mist">Confirm the transaction in your wallet.</p>
             </div>
           )}
 
@@ -276,8 +281,8 @@ export function IssueTraitModal({ onClose }: IssueTraitModalProps) {
               <div className="w-14 h-14 mx-auto mb-4 rounded-full bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center">
                 <span className="text-2xl text-emerald-400">✓</span>
               </div>
-              <h4 className="text-sm font-semibold text-white mb-1">Trait Issued!</h4>
-              <p className="text-[11px] text-neutral-500 mb-4">
+              <h4 className="text-sm font-semibold text-white mb-1">Trait issued</h4>
+              <p className="text-[11px] text-mist mb-4">
                 The recipient's scanner will discover this attestation on their next scan.
               </p>
               {txHash && chainId && (
@@ -285,7 +290,7 @@ export function IssueTraitModal({ onClose }: IssueTraitModalProps) {
                   href={getExplorerTxUrl(chainId, txHash) ?? "#"}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1.5 text-[11px] text-blue-400 hover:text-blue-300 mb-4"
+                  className="inline-flex items-center gap-1.5 text-[11px] text-glow underline decoration-glow/40 underline-offset-2 hover:decoration-glow mb-4"
                 >
                   View on Explorer
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -298,7 +303,7 @@ export function IssueTraitModal({ onClose }: IssueTraitModalProps) {
               <button
                 type="button"
                 onClick={onClose}
-                className="w-full px-4 py-2.5 rounded-lg text-sm font-medium text-black bg-white hover:bg-neutral-200 transition-colors"
+                className="w-full px-4 py-2.5 rounded-xl text-sm font-semibold text-ink-950 bg-glow hover:opacity-90 transition-colors"
               >
                 Done
               </button>
@@ -316,22 +321,20 @@ export function IssueTraitModal({ onClose }: IssueTraitModalProps) {
                 <button
                   type="button"
                   onClick={onClose}
-                  className="flex-1 px-4 py-2.5 rounded-lg text-sm font-medium text-neutral-400 border border-neutral-700 hover:border-neutral-600 hover:text-white transition-colors"
+                  className="flex-1 px-4 py-2.5 rounded-xl text-sm font-medium text-mist border border-ink-600 bg-ink-950/30 hover:border-glow/30 hover:text-white transition-colors"
                 >
                   Close
                 </button>
                 <button
                   type="button"
                   onClick={() => setStep("form")}
-                  className="flex-1 px-4 py-2.5 rounded-lg text-sm font-medium text-black bg-white hover:bg-neutral-200 transition-colors"
+                  className="flex-1 px-4 py-2.5 rounded-xl text-sm font-semibold text-ink-950 bg-glow hover:opacity-90 transition-colors"
                 >
                   Try Again
                 </button>
               </div>
             </div>
           )}
-        </div>
-      </div>
-    </div>
+    </ModalShell>
   );
 }
