@@ -13,6 +13,7 @@ import { useOpaqueWasm } from "../hooks/useOpaqueWasm";
 import { useKeys } from "../context/KeysContext";
 import { fetchLatestValidMerkleRoot, generateReputationProof, submitProofOnChain } from "../lib/reputationProver";
 import type { DiscoveredTrait, ProofData } from "../lib/reputation";
+import { ModalShell } from "./ModalShell";
 
 type ProveTraitModalProps = {
   trait: DiscoveredTrait;
@@ -144,71 +145,51 @@ export function ProveTraitModal({ trait, onClose }: ProveTraitModalProps) {
   };
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-md"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="prove-trait-title"
-      onClick={handleClose}
+    <ModalShell
+      open
+      title={
+        step === "explain"
+          ? "Prove trait"
+          : step === "generating"
+            ? "Generating proof…"
+            : step === "ready"
+              ? "Proof ready"
+              : step === "submitting"
+                ? "Submitting…"
+                : step === "submitted"
+                  ? "Verified"
+                  : "Proof failed"
+      }
+      description={
+        step === "explain"
+          ? "Generate a zero-knowledge proof locally, then optionally submit it on-chain."
+          : null
+      }
+      onClose={handleClose}
+      closeOnBackdrop={step !== "submitting" && step !== "generating"}
+      maxWidthClassName="max-w-md"
     >
-      <div
-        className="max-w-md w-full rounded-2xl border border-neutral-700 bg-neutral-900 shadow-2xl overflow-hidden"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Header */}
-        <div className="px-6 pt-6 pb-4 border-b border-neutral-800">
-          <div className="flex items-center justify-between">
-            <h3 id="prove-trait-title" className="text-base font-semibold text-white">
-              {step === "explain" && "Prove Trait"}
-              {step === "generating" && "Generating Proof"}
-              {step === "ready" && "Proof Ready"}
-              {step === "submitting" && "Submitting..."}
-              {step === "submitted" && "Verified!"}
-              {step === "error" && "Proof Failed"}
-            </h3>
-            <button
-              type="button"
-              onClick={handleClose}
-              className="text-neutral-500 hover:text-white transition-colors p-1"
-              aria-label="Close"
-            >
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <line x1="18" y1="6" x2="6" y2="18" />
-                <line x1="6" y1="6" x2="18" y2="18" />
-              </svg>
-            </button>
-          </div>
-        </div>
-
-        {/* Body */}
-        <div className="px-6 py-5">
-          {step === "explain" && (
-            <ExplainStep trait={trait} onConfirm={handleGenerate} onCancel={handleClose} />
-          )}
-          {step === "generating" && (
-            <GeneratingStep progress={proofState.progress} stage={proofState.stage} />
-          )}
-          {step === "ready" && (
-            <ReadyStep
-              trait={trait}
-              nullifier={proofState.proof?.nullifier ?? ""}
-              proof={proofState.proof}
-              onSubmit={handleSubmit}
-              onClose={handleClose}
-            />
-          )}
-          {step === "submitting" && (
-            <SubmittingStep />
-          )}
-          {step === "submitted" && (
-            <SubmittedStep txHash={txHash} onClose={handleClose} />
-          )}
-          {step === "error" && (
-            <ErrorStep error={proofState.error} onRetry={handleRetry} onClose={handleClose} />
-          )}
-        </div>
-      </div>
-    </div>
+      {step === "explain" && (
+        <ExplainStep trait={trait} onConfirm={handleGenerate} onCancel={handleClose} />
+      )}
+      {step === "generating" && (
+        <GeneratingStep progress={proofState.progress} stage={proofState.stage} />
+      )}
+      {step === "ready" && (
+        <ReadyStep
+          trait={trait}
+          nullifier={proofState.proof?.nullifier ?? ""}
+          proof={proofState.proof}
+          onSubmit={handleSubmit}
+          onClose={handleClose}
+        />
+      )}
+      {step === "submitting" && <SubmittingStep />}
+      {step === "submitted" && <SubmittedStep txHash={txHash} onClose={handleClose} />}
+      {step === "error" && (
+        <ErrorStep error={proofState.error} onRetry={handleRetry} onClose={handleClose} />
+      )}
+    </ModalShell>
   );
 }
 
@@ -227,26 +208,26 @@ function ExplainStep({
 }) {
   return (
     <div>
-      <div className="rounded-xl border border-neutral-800 bg-neutral-950/50 p-4 mb-5">
+      <div className="rounded-xl border border-ink-700 bg-ink-950/40 p-4 mb-5">
         <div className="text-sm font-medium text-white mb-3">
           You are proving:
         </div>
         <div className="flex items-center gap-3 mb-4">
-          <div className="w-10 h-10 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-lg">
+          <div className="w-10 h-10 rounded-lg bg-glow-muted/25 border border-glow/25 flex items-center justify-center text-lg text-glow">
             {trait.traitDef.icon === "code" ? "</>" : trait.traitDef.icon === "trending-up" ? "↗" : trait.traitDef.icon === "zap" ? "⚡" : trait.traitDef.icon === "shield" ? "🛡" : "◈"}
           </div>
           <div>
             <div className="font-semibold text-white text-sm">{trait.traitDef.label}</div>
-            <div className="text-[11px] text-neutral-500">{trait.traitDef.description}</div>
+            <div className="text-[11px] text-mist">{trait.traitDef.description}</div>
           </div>
         </div>
 
         <div className="space-y-2.5">
           <div className="flex items-start gap-2.5">
-            <span className="text-emerald-400 mt-0.5 shrink-0 text-xs">✓</span>
+            <span className="text-glow mt-0.5 shrink-0 text-xs">✓</span>
             <div>
-              <div className="text-xs font-medium text-emerald-400">Shared (public)</div>
-              <div className="text-[11px] text-neutral-400">
+              <div className="text-xs font-medium text-glow">Shared (public)</div>
+              <div className="text-[11px] text-mist">
                 That you hold the "{trait.traitDef.label}" attestation for this specific action.
               </div>
             </div>
@@ -255,7 +236,7 @@ function ExplainStep({
             <span className="text-red-400 mt-0.5 shrink-0 text-xs">✗</span>
             <div>
               <div className="text-xs font-medium text-red-400">Hidden (private)</div>
-              <div className="text-[11px] text-neutral-400">
+              <div className="text-[11px] text-mist">
                 Your main wallet address, stealth addresses, transaction history,
                 balances, and all other traits.
               </div>
@@ -264,7 +245,7 @@ function ExplainStep({
         </div>
       </div>
 
-      <p className="text-[11px] text-neutral-600 mb-4">
+      <p className="text-[11px] text-mist/80 mb-4">
         A zero-knowledge proof will be generated locally in your browser. No data leaves your device
         until you explicitly submit the proof on-chain.
       </p>
@@ -273,14 +254,14 @@ function ExplainStep({
         <button
           type="button"
           onClick={onCancel}
-          className="flex-1 px-4 py-2.5 rounded-lg text-sm font-medium text-neutral-400 border border-neutral-700 hover:border-neutral-600 hover:text-white transition-colors"
+          className="flex-1 px-4 py-2.5 rounded-xl text-sm font-medium text-mist border border-ink-600 bg-ink-950/30 hover:border-glow/30 hover:text-white transition-colors"
         >
           Cancel
         </button>
         <button
           type="button"
           onClick={onConfirm}
-          className="flex-1 px-4 py-2.5 rounded-lg text-sm font-medium text-black bg-white hover:bg-neutral-200 transition-colors"
+          className="flex-1 px-4 py-2.5 rounded-xl text-sm font-semibold text-ink-950 bg-glow hover:opacity-90 transition-colors"
         >
           Generate Proof
         </button>
@@ -296,18 +277,18 @@ function GeneratingStep({ progress, stage }: { progress: number; stage: string }
 
   return (
     <div className="text-center py-4">
-      <div className="w-12 h-12 mx-auto mb-4 border-2 border-white/20 border-t-white rounded-full animate-spin" aria-hidden />
+      <div className="w-12 h-12 mx-auto mb-4 border-2 border-ink-600 border-t-glow rounded-full animate-spin" aria-hidden />
       <p className="text-sm font-medium text-white mb-1">{label}</p>
-      <p className="text-[11px] text-neutral-500 mb-4">
+      <p className="text-[11px] text-mist mb-4">
         This runs entirely in your browser using WebAssembly.
       </p>
-      <div className="h-1.5 bg-neutral-800 rounded-full overflow-hidden max-w-xs mx-auto">
+      <div className="h-1.5 bg-ink-800 rounded-full overflow-hidden max-w-xs mx-auto">
         <div
-          className="h-full bg-linear-to-r from-neutral-500 to-white rounded-full transition-all duration-700 ease-out"
+          className="h-full bg-linear-to-r from-glow-dim to-glow rounded-full transition-all duration-700 ease-out"
           style={{ width: `${progress}%` }}
         />
       </div>
-      <p className="text-[10px] text-neutral-600 mt-2">{progress}%</p>
+      <p className="text-[10px] text-mist/70 mt-2">{progress}%</p>
     </div>
   );
 }
@@ -349,33 +330,33 @@ function ReadyStep({
         <span className="text-2xl text-emerald-400">✓</span>
       </div>
       <h4 className="text-sm font-semibold text-white mb-1">Proof Generated</h4>
-      <p className="text-[11px] text-neutral-500 mb-4">
+      <p className="text-[11px] text-mist mb-4">
         Your "{trait.traitDef.label}" proof is ready. Submit it on-chain to verify
         your reputation without revealing your identity.
       </p>
 
-      <div className="rounded-lg bg-neutral-950 border border-neutral-800 p-3 mb-4 text-left">
-        <div className="text-[10px] text-neutral-600 mb-1">Nullifier (unique per action)</div>
+      <div className="rounded-xl bg-ink-950/40 border border-ink-700 p-3 mb-4 text-left">
+        <div className="text-[10px] text-mist/70 mb-1">Nullifier (unique per action)</div>
         <div className="flex items-center gap-2">
-          <code className="text-[11px] text-neutral-300 font-mono truncate flex-1">
+          <code className="text-[11px] text-slate-200 font-mono truncate flex-1">
             {nullifier}
           </code>
           <button
             type="button"
             onClick={handleCopyNullifier}
-            className="text-[10px] text-neutral-500 hover:text-white transition-colors shrink-0"
+            className="text-[10px] text-mist/70 hover:text-white transition-colors shrink-0"
           >
             {copiedNullifier ? "Copied!" : "Copy"}
           </button>
         </div>
       </div>
 
-      <div className="rounded-lg bg-neutral-950 border border-neutral-800 p-3 mb-4 text-left">
-        <div className="text-[10px] text-neutral-600 mb-2">Proof payload</div>
+      <div className="rounded-xl bg-ink-950/40 border border-ink-700 p-3 mb-4 text-left">
+        <div className="text-[10px] text-mist/70 mb-2">Proof payload</div>
         <button
           type="button"
           onClick={handleCopyProof}
-          className="w-full px-3 py-2 rounded-md text-xs font-medium text-neutral-200 border border-neutral-700 hover:border-neutral-500 hover:text-white transition-colors"
+          className="w-full px-3 py-2 rounded-xl text-xs font-medium text-mist border border-ink-600 bg-ink-950/30 hover:border-glow/30 hover:text-white transition-colors"
         >
           {copiedProof ? "Copied proof JSON" : "Copy Proof JSON"}
         </button>
@@ -385,14 +366,14 @@ function ReadyStep({
         <button
           type="button"
           onClick={onClose}
-          className="flex-1 px-4 py-2.5 rounded-lg text-sm font-medium text-neutral-400 border border-neutral-700 hover:border-neutral-600 hover:text-white transition-colors"
+          className="flex-1 px-4 py-2.5 rounded-xl text-sm font-medium text-mist border border-ink-600 bg-ink-950/30 hover:border-glow/30 hover:text-white transition-colors"
         >
           Close
         </button>
         <button
           type="button"
           onClick={onSubmit}
-          className="flex-1 px-4 py-2.5 rounded-lg text-sm font-medium text-black bg-white hover:bg-neutral-200 transition-colors"
+          className="flex-1 px-4 py-2.5 rounded-xl text-sm font-semibold text-ink-950 bg-glow hover:opacity-90 transition-colors"
         >
           Submit On-Chain
         </button>
@@ -404,9 +385,9 @@ function ReadyStep({
 function SubmittingStep() {
   return (
     <div className="text-center py-4">
-      <div className="w-12 h-12 mx-auto mb-4 border-2 border-white/20 border-t-white rounded-full animate-spin" aria-hidden />
+      <div className="w-12 h-12 mx-auto mb-4 border-2 border-ink-600 border-t-glow rounded-full animate-spin" aria-hidden />
       <p className="text-sm font-medium text-white mb-1">Submitting to verifier...</p>
-      <p className="text-[11px] text-neutral-500">
+      <p className="text-[11px] text-mist">
         Confirm the transaction in your wallet.
       </p>
     </div>
@@ -420,18 +401,18 @@ function SubmittedStep({ txHash, onClose }: { txHash: string | null; onClose: ()
         <span className="text-2xl text-emerald-400">✓</span>
       </div>
       <h4 className="text-sm font-semibold text-white mb-1">Verified On-Chain!</h4>
-      <p className="text-[11px] text-neutral-500 mb-4">
+      <p className="text-[11px] text-mist mb-4">
         Your reputation proof has been verified by the smart contract.
       </p>
 
       {txHash && (
-        <div className="rounded-lg bg-neutral-950 border border-neutral-800 p-3 mb-4 text-left">
-          <div className="text-[10px] text-neutral-600 mb-1">Transaction</div>
+        <div className="rounded-xl bg-ink-950/40 border border-ink-700 p-3 mb-4 text-left">
+          <div className="text-[10px] text-mist/70 mb-1">Transaction</div>
           <a
             href={`https://sepolia.etherscan.io/tx/${txHash}`}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-[11px] text-blue-400 hover:text-blue-300 font-mono truncate block"
+            className="text-[11px] text-glow underline decoration-glow/40 underline-offset-2 hover:decoration-glow font-mono truncate block"
           >
             {txHash.slice(0, 10)}...{txHash.slice(-8)}
           </a>
@@ -441,7 +422,7 @@ function SubmittedStep({ txHash, onClose }: { txHash: string | null; onClose: ()
       <button
         type="button"
         onClick={onClose}
-        className="w-full px-4 py-2.5 rounded-lg text-sm font-medium text-black bg-white hover:bg-neutral-200 transition-colors"
+        className="w-full px-4 py-2.5 rounded-xl text-sm font-semibold text-ink-950 bg-glow hover:opacity-90 transition-colors"
       >
         Done
       </button>
@@ -469,14 +450,14 @@ function ErrorStep({
         <button
           type="button"
           onClick={onClose}
-          className="flex-1 px-4 py-2.5 rounded-lg text-sm font-medium text-neutral-400 border border-neutral-700 hover:border-neutral-600 hover:text-white transition-colors"
+          className="flex-1 px-4 py-2.5 rounded-xl text-sm font-medium text-mist border border-ink-600 bg-ink-950/30 hover:border-glow/30 hover:text-white transition-colors"
         >
           Close
         </button>
         <button
           type="button"
           onClick={onRetry}
-          className="flex-1 px-4 py-2.5 rounded-lg text-sm font-medium text-black bg-white hover:bg-neutral-200 transition-colors"
+          className="flex-1 px-4 py-2.5 rounded-xl text-sm font-semibold text-ink-950 bg-glow hover:opacity-90 transition-colors"
         >
           Retry
         </button>
