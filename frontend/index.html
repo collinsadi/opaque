@@ -2,7 +2,12 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover"
+    />
+    <meta name="format-detection" content="telephone=no" />
+    <meta name="color-scheme" content="dark" />
 
     <!-- Favicon (match docs) -->
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
@@ -15,16 +20,26 @@
     <meta name="author" content="Opaque Cash" />
     <meta name="robots" content="index, follow" />
     <link rel="canonical" href="https://opaque.cash/" />
+    <link rel="preconnect" href="https://res.cloudinary.com" crossorigin />
+    <link rel="dns-prefetch" href="https://res.cloudinary.com" />
 
     <!-- Open Graph / Facebook -->
     <meta property="og:type" content="website" />
     <meta property="og:url" content="https://opaque.cash/" />
     <meta property="og:title" content="Opaque Cash — Stealth Address Wallet & Privacy Protocol" />
     <meta property="og:description" content="Receive ETH and ERC-20 at one-time stealth addresses. Privacy-first wallet built on EIP-5564 and a Stealth Meta-Address Registry. One meta-address, unlinkable payments." />
-    <meta property="og:image" content="https://opaque.cash/og_image.jpg" />
+    <meta
+      property="og:image"
+      content="https://res.cloudinary.com/doiyg0p4w/image/upload/v1774887062/opaque-og-psr_xwvx0b.svg"
+    />
+    <meta
+      property="og:image:secure_url"
+      content="https://res.cloudinary.com/doiyg0p4w/image/upload/v1774887062/opaque-og-psr_xwvx0b.svg"
+    />
+    <meta property="og:image:type" content="image/svg+xml" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
-    <meta property="og:image:alt" content="Opaque Cash — Stealth Address Wallet" />
+    <meta property="og:image:alt" content="Opaque Cash — Programmable Stealth Reputations" />
     <meta property="og:site_name" content="Opaque Cash" />
     <meta property="og:locale" content="en_US" />
 
@@ -33,11 +48,17 @@
     <meta name="twitter:url" content="https://opaque.cash/" />
     <meta name="twitter:title" content="Opaque Cash — Stealth Address Wallet & Privacy Protocol" />
     <meta name="twitter:description" content="Receive ETH and ERC-20 at one-time stealth addresses. Privacy-first wallet built on EIP-5564 and a Stealth Meta-Address Registry." />
-    <meta name="twitter:image" content="https://opaque.cash/og_image.jpg" />
-    <meta name="twitter:image:alt" content="Opaque Cash — Stealth Address Wallet" />
+    <meta
+      name="twitter:image"
+      content="https://res.cloudinary.com/doiyg0p4w/image/upload/v1774887062/opaque-og-psr_xwvx0b.svg"
+    />
+    <meta name="twitter:image:alt" content="Opaque Cash — Programmable Stealth Reputations" />
 
     <!-- Theme & mobile -->
     <meta name="theme-color" content="#0a0a0a" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#07080d" />
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff" />
+    <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <link rel="apple-touch-icon" href="/favicon.svg" />
