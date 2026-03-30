@@ -29,6 +29,7 @@ import { ExplorerLink } from "./ExplorerLink";
 import { useGasTankStore } from "../store/gasTankStore";
 import { ghostAnnouncementEntryKey, useGhostAnnouncementStore } from "../store/ghostAnnouncementStore";
 import { GhostAnnounceModal } from "./GhostAnnounceModal";
+import { ModalShell } from "./ModalShell";
 
 export type FoundTx = {
   id: string;
@@ -800,40 +801,41 @@ export function PrivateBalanceView() {
   }, [newlyDetectedIds]);
 
   return (
-    <div className="w-full h-full min-h-[calc(100vh-8rem)] flex flex-col">
-      {/* Header card - full width */}
-      <div className="card mb-6">
-        <h2 className="text-lg font-semibold text-white mb-1">
-          Portfolio
-        </h2>
-        <p className="text-sm text-neutral-500 mb-6">
-          Total assets (ETH, USDC, USDT) across your stealth addresses. Click an asset to see addresses and withdraw.
-        </p>
-        <div className="mb-4 flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={handleRefreshBalances}
-            disabled={refreshing || scanner.progress.phase === "syncing" || scanner.progress.phase === "backfilling" || scanner.progress.phase === "indexer-fetch"}
-            className="px-3 py-1.5 text-sm rounded-lg border border-neutral-600 text-neutral-300 hover:bg-neutral-800 hover:border-neutral-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {refreshing ? "Refreshing…" : "Refresh Balances"}
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setManualImportOpen(true);
-              setManualImportAddress("");
-              setManualImportError(null);
-            }}
-            className="px-3 py-1.5 text-sm rounded-lg border border-neutral-600 text-neutral-300 hover:bg-neutral-800 hover:border-neutral-500 transition-colors"
-          >
-            Missing a Payment?
-          </button>
+    <div className="w-full flex flex-col">
+      <div className="mb-8">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h2 className="font-display text-2xl font-bold text-white">Private balance</h2>
+            <p className="mt-1 text-sm text-mist">
+              Assets across your stealth addresses. Select an asset to drill down and withdraw.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={handleRefreshBalances}
+              disabled={refreshing || scanner.progress.phase === "syncing" || scanner.progress.phase === "backfilling" || scanner.progress.phase === "indexer-fetch"}
+              className="rounded-xl border border-ink-600 bg-ink-950/30 px-3.5 py-2 text-sm font-medium text-mist transition-colors hover:border-glow/30 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {refreshing ? "Refreshing…" : "Refresh"}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setManualImportOpen(true);
+                setManualImportAddress("");
+                setManualImportError(null);
+              }}
+              className="rounded-xl border border-ink-600 bg-ink-950/30 px-3.5 py-2 text-sm font-medium text-mist transition-colors hover:border-glow/30 hover:text-white"
+            >
+              Import ghost
+            </button>
+          </div>
         </div>
 
         {/* Scanning status (IndexedDB cache + adaptive RPC) */}
         <div
-          className={`p-4 rounded-lg bg-neutral-900 border border-border ${
+          className={`mt-5 p-4 rounded-2xl bg-ink-900/35 border border-ink-700/60 ${
             scanner.progress.phase === "syncing" ||
             scanner.progress.phase === "backfilling" ||
             scanner.progress.phase === "indexer-fetch"
@@ -842,7 +844,7 @@ export function PrivateBalanceView() {
           } ${syncingPaused ? "border-amber-500/40" : ""}`}
         >
           <div className="flex items-center justify-between gap-2 mb-2">
-            <span className="text-sm text-neutral-400 font-mono">
+            <span className="text-sm text-mist font-mono">
               {syncingPaused
                 ? "Syncing Paused"
                 : scanner.progress.phase === "indexer-fetch"
@@ -859,7 +861,7 @@ export function PrivateBalanceView() {
                             ? "Error"
                             : "Idle"}
             </span>
-            <span className="text-neutral-300 text-sm font-mono">
+            <span className="text-slate-200 text-sm font-mono">
               {scanner.progress.currentBlock > 0n
                 ? `Block ${Number(scanner.progress.currentBlock).toLocaleString()}`
                 : scanner.progress.phase === "syncing" || scanner.progress.phase === "backfilling"
@@ -867,14 +869,14 @@ export function PrivateBalanceView() {
                   : "—"}
             </span>
           </div>
-          <div className="h-1 rounded-full bg-neutral-800 overflow-hidden">
+          <div className="h-1 rounded-full bg-ink-800 overflow-hidden">
             <div
-              className="h-full bg-neutral-500 rounded-full transition-all duration-500"
+              className="h-full bg-glow-muted/60 rounded-full transition-all duration-500"
               style={{ width: `${scanner.progress.percent}%` }}
             />
           </div>
           {(scanner.progress.message || scanner.isBackfilling) && !syncingPaused && (
-            <p className="text-neutral-600 text-xs mt-2 font-mono">
+            <p className="text-mist/70 text-xs mt-2 font-mono">
               {scanner.progress.phase === "indexer-fetched"
                 ? "Scanning Vault…"
                 : scanner.isBackfilling
@@ -890,7 +892,7 @@ export function PrivateBalanceView() {
               <button
                 type="button"
                 onClick={handleRetrySync}
-                className="px-2 py-1 text-xs font-medium rounded-md bg-amber-500/20 text-amber-400 hover:bg-amber-500/30 border border-amber-500/40"
+                className="px-2 py-1 text-xs font-medium rounded-lg bg-amber-500/20 text-amber-200 hover:bg-amber-500/30 border border-amber-500/40"
               >
                 Retry Sync
               </button>
@@ -901,26 +903,26 @@ export function PrivateBalanceView() {
 
       {/* Global claim error - full width */}
       {claimError && (
-        <div className="mb-4 p-3 rounded-lg bg-neutral-900 border border-error/30 text-error text-sm">
+        <div className="mb-4 p-3 rounded-xl bg-error/10 border border-error/30 text-error text-sm">
           {claimError}
         </div>
       )}
 
       {/* Content: loading / empty / portfolio (Level 1) or drill-down (Level 2) */}
       {!wasmReady ? (
-        <div className="card max-w-md">
-          <p className="text-neutral-600 text-sm">Initializing cryptography…</p>
+        <div className="rounded-2xl border border-ink-700 bg-ink-900/25 p-6">
+          <p className="text-mist text-sm">Initializing cryptography…</p>
         </div>
       ) : loading ? (
-        <div className="card max-w-md">
-          <p className="text-neutral-600 text-sm">Deciphering Payments…</p>
+        <div className="rounded-2xl border border-ink-700 bg-ink-900/25 p-6">
+          <p className="text-mist text-sm">Deciphering payments…</p>
         </div>
       ) : portfolio.length === 0 || portfolio.every((p) => p.totalRaw === 0n) ? (
-        <div className="card max-w-md">
-          <p className="text-neutral-400 text-sm">
+        <div className="rounded-2xl border border-ink-700 bg-ink-900/25 p-6">
+          <p className="text-mist text-sm">
             No incoming payments found yet.
           </p>
-          <p className="text-neutral-600 text-xs mt-1">
+          <p className="text-mist/70 text-xs mt-1">
             Payments sent to your stealth address will appear here.
           </p>
         </div>
@@ -930,11 +932,11 @@ export function PrivateBalanceView() {
           <button
             type="button"
             onClick={() => setSelectedAsset(null)}
-            className="text-sm text-neutral-500 hover:text-neutral-300"
+            className="text-sm text-mist/80 hover:text-white transition-colors"
           >
             ← Back to portfolio
           </button>
-          <h3 className="text-lg font-semibold text-white">
+          <h3 className="font-display text-xl font-bold text-white">
             {selectedAsset.symbol} — Stealth addresses
           </h3>
           <div className="space-y-3">
@@ -970,14 +972,14 @@ export function PrivateBalanceView() {
                   return (
                     <div
                       key={tx.id}
-                      className="card flex flex-wrap items-center justify-between gap-3 border-amber-500/40"
+                      className="rounded-2xl border border-amber-500/40 bg-amber-500/5 p-5 flex flex-wrap items-center justify-between gap-3"
                     >
                       <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
                           <span className="text-xs px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 border border-amber-500/40">
                             Manual/Ghost Funds
                           </span>
-                          <ExplorerLink chainId={chainId} value={tx.address} type="address" className="text-neutral-400 text-xs" />
+                          <ExplorerLink chainId={chainId} value={tx.address} type="address" className="text-mist text-xs" />
                         </div>
                         <p className="text-success font-semibold mt-0.5">
                           {amountStr} {selectedAsset.symbol}
@@ -993,7 +995,7 @@ export function PrivateBalanceView() {
                             watchlistArchive(chainId, tx.address);
                             showToast("Address archived. It will no longer be polled for balances.");
                           }}
-                          className="px-2 py-1 text-xs rounded-md border border-neutral-600 text-neutral-400 hover:bg-neutral-800 hover:text-neutral-300"
+                          className="px-2 py-1 text-xs rounded-lg border border-ink-600 text-mist hover:border-glow/30 hover:text-white transition-colors"
                         >
                           Archive
                         </button>
@@ -1004,7 +1006,7 @@ export function PrivateBalanceView() {
                 return (
                   <div
                     key={tx.id}
-                    className="card flex flex-wrap items-center justify-between gap-3"
+                    className="rounded-2xl border border-ink-700 bg-ink-900/25 p-5 flex flex-wrap items-center justify-between gap-3"
                   >
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
@@ -1013,9 +1015,9 @@ export function PrivateBalanceView() {
                             Manual/Ghost Funds
                           </span>
                         )}
-                        <ExplorerLink chainId={chainId} value={tx.address} type="address" className="text-neutral-400 text-xs" />
+                        <ExplorerLink chainId={chainId} value={tx.address} type="address" className="text-mist text-xs" />
                         {tx.txHash && (
-                          <ExplorerLink chainId={chainId} value={tx.txHash} type="tx" className="text-neutral-500 text-xs" startChars={8} endChars={6} />
+                          <ExplorerLink chainId={chainId} value={tx.txHash} type="tx" className="text-mist/70 text-xs" startChars={8} endChars={6} />
                         )}
                       </div>
                       <p className="text-success font-semibold mt-0.5">
@@ -1060,7 +1062,7 @@ export function PrivateBalanceView() {
                         setClaimModalTx(tx);
                         setClaimAsset(selectedAsset);
                       }}
-                      className="px-3 py-1.5 text-xs font-medium rounded-md bg-white text-black disabled:opacity-40 disabled:cursor-not-allowed hover:enabled:opacity-85"
+                      className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-glow text-ink-950 disabled:opacity-40 disabled:cursor-not-allowed hover:enabled:opacity-90"
                     >
                       {claimingId === tx.id ? "Withdrawing…" : "Withdraw"}
                     </button>
@@ -1090,7 +1092,7 @@ export function PrivateBalanceView() {
         </div>
       ) : (
         /* Level 1: Portfolio cards — total per asset */
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           {portfolio
             .filter((p) => p.totalRaw > 0n)
             .map((p) => {
@@ -1103,14 +1105,17 @@ export function PrivateBalanceView() {
                   key={p.asset.symbol}
                   type="button"
                   onClick={() => setSelectedAsset(p.asset)}
-                  className="card text-left hover:border-neutral-600 transition-colors"
+                  className="group text-left rounded-2xl border border-ink-700 bg-ink-900/30 p-6 transition-all hover:border-glow/30 hover:bg-ink-900/45 hover:shadow-[0_0_20px_rgba(94,234,212,0.06)]"
                 >
-                  <p className="text-neutral-500 text-sm">{p.asset.symbol}</p>
-                  <p className="text-xl font-semibold text-white mt-1">
+                  <p className="text-mist text-sm">{p.asset.symbol}</p>
+                  <p className="font-display text-2xl font-bold text-white mt-1">
                     {amountStr}
                   </p>
-                  <p className="text-neutral-600 text-xs mt-1">
+                  <p className="text-mist/70 text-xs mt-1">
                     {p.entries.length} address{p.entries.length !== 1 ? "es" : ""}
+                  </p>
+                  <p className="mt-4 text-xs font-medium text-mist/70 transition-colors group-hover:text-glow">
+                    View addresses →
                   </p>
                 </button>
               );
@@ -1126,12 +1131,23 @@ export function PrivateBalanceView() {
           const showIncorrectlyGenerated = claimModalTx.source === "manual" && !claimModalTx.privateKey && !hasKey;
           return showIncorrectlyGenerated;
         })() ? (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60" onClick={() => { setClaimModalTx(null); setClaimAsset(null); setClaimError(null); }}>
-            <div className="card max-w-md w-full p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
-              <p className="text-amber-500/90 text-sm">This address was generated incorrectly and cannot be spent.</p>
-              <button type="button" onClick={() => { setClaimModalTx(null); setClaimAsset(null); setClaimError(null); }} className="mt-4 px-3 py-1.5 rounded-lg text-sm btn-secondary">Close</button>
+          <ModalShell
+            open
+            title="Cannot withdraw"
+            description="This manual ghost address was generated incorrectly and cannot be spent."
+            onClose={() => { setClaimModalTx(null); setClaimAsset(null); setClaimError(null); }}
+            maxWidthClassName="max-w-md"
+          >
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={() => { setClaimModalTx(null); setClaimAsset(null); setClaimError(null); }}
+                className="rounded-xl border border-ink-600 bg-ink-950/30 px-4 py-2 text-sm font-medium text-mist hover:border-glow/30 hover:text-white transition-colors"
+              >
+                Close
+              </button>
             </div>
-          </div>
+          </ModalShell>
         ) : (
         <ClaimModal
           tx={claimModalTx}
@@ -1194,39 +1210,37 @@ export function PrivateBalanceView() {
         )}
 
       {manualImportOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60" onClick={() => setManualImportOpen(false)}>
-          <div
-            className="card max-w-md w-full p-6 shadow-xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h3 className="text-lg font-semibold text-white mb-1">Import Ghost Address</h3>
-            <p className="text-sm text-neutral-500 mb-4">
-              Paste a 0x ghost address you previously generated. It will be added to the tracking list and checked for funds. Without the ephemeral key (from the device where you generated it), you can see the balance but not claim.
-            </p>
-            <input
-              type="text"
-              value={manualImportAddress}
-              onChange={(e) => {
-                setManualImportAddress(e.target.value);
-                setManualImportError(null);
-              }}
-              placeholder="0x…"
-              className="input-field w-full mb-2 font-mono text-sm"
-            />
-            {manualImportError && (
-              <p className="text-error text-xs mb-2">{manualImportError}</p>
-            )}
-            <div className="flex gap-2 justify-end">
-              <button
-                type="button"
-                onClick={() => setManualImportOpen(false)}
-                className="px-3 py-1.5 rounded-lg text-sm btn-secondary"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={() => {
+        <ModalShell
+          open
+          title="Import ghost address"
+          description="Add a previously generated 0x stealth address to tracking. Without its ephemeral key, you can view balance but cannot withdraw."
+          onClose={() => setManualImportOpen(false)}
+          maxWidthClassName="max-w-md"
+        >
+          <input
+            type="text"
+            value={manualImportAddress}
+            onChange={(e) => {
+              setManualImportAddress(e.target.value);
+              setManualImportError(null);
+            }}
+            placeholder="0x…"
+            className="input-field w-full mb-2 font-mono text-sm"
+          />
+          {manualImportError && (
+            <p className="text-error text-xs mb-3">{manualImportError}</p>
+          )}
+          <div className="flex gap-2 justify-end">
+            <button
+              type="button"
+              onClick={() => setManualImportOpen(false)}
+              className="rounded-xl border border-ink-600 bg-ink-950/30 px-4 py-2 text-sm font-medium text-mist hover:border-glow/30 hover:text-white transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={() => {
                   const trimmed = manualImportAddress.trim();
                   if (!trimmed) {
                     setManualImportError("Enter an address.");
@@ -1266,13 +1280,12 @@ export function PrivateBalanceView() {
                   setManualImportOpen(false);
                   showToast("Ghost address added. Checking for funds…");
                 }}
-                className="px-3 py-1.5 rounded-lg text-sm font-medium bg-white text-black hover:opacity-90"
-              >
-                Add and check
-              </button>
-            </div>
+              className="rounded-xl bg-glow px-4 py-2 text-sm font-semibold text-ink-950 hover:opacity-90"
+            >
+              Add & check
+            </button>
           </div>
-        </div>
+        </ModalShell>
       )}
     </div>
   );
