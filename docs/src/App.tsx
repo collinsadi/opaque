@@ -23,10 +23,19 @@ import { GuidePsrVerifyOnChain } from "@/pages/guides/psr/VerifyOnChain";
 import { ModularReference } from "@/pages/reference/Modular";
 import { FlowsReference } from "@/pages/reference/Flows";
 import { Playground } from "@/pages/Playground";
+import { PlaygroundLayout } from "./layouts/PlaygroundLayout";
 
 export default function App() {
   return (
     <Routes>
+      <Route
+        path="/playground"
+        element={
+          <PlaygroundLayout>
+            <Playground />
+          </PlaygroundLayout>
+        }
+      />
       <Route element={<DocsLayout />}>
         <Route path="/" element={<Overview />} />
         <Route path="/install" element={<Install />} />
@@ -68,7 +77,6 @@ export default function App() {
         />
         <Route path="/reference/modular" element={<ModularReference />} />
         <Route path="/reference/flows" element={<FlowsReference />} />
-        <Route path="/playground" element={<Playground />} />
       </Route>
     </Routes>
   );
