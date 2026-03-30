@@ -33,7 +33,7 @@ export function GasTankPage() {
       </section>
 
       <p className="pt-4">
-        <Link to="/" className="text-white underline hover:no-underline">
+        <Link to="/app" className="text-white underline hover:no-underline">
           ← Back to app
         </Link>
       </p>
