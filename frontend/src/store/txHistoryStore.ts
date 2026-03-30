@@ -14,7 +14,7 @@ const STORAGE_KEY = "opaque-tx-history";
 
 const hasRehydratedRef = { current: false };
 
-export type TxHistoryKind = "sent" | "received" | "ghost";
+export type TxHistoryKind = "sent" | "received" | "ghost" | "trait";
 
 export type TxHistoryEntry = {
   id: string;
