@@ -15,6 +15,9 @@ function bytesToHex(b: Uint8Array): string {
 export function ReceiveView({ onBack }: { onBack: () => void }) {
   const { isSetup, stealthMetaAddressHex } = useKeys();
   const [mode, setMode] = useState<Mode>("choose");
+  const [copiedMeta, setCopiedMeta] = useState(false);
+  const [copiedLink, setCopiedLink] = useState(false);
+  const [copiedGhost, setCopiedGhost] = useState(false);
   const [ghostResult, setGhostResult] = useState<{
     stealthAddress: string;
     ephemeralPrivKeyHex: string;
@@ -33,6 +36,24 @@ export function ReceiveView({ onBack }: { onBack: () => void }) {
     a.click();
   }, []);
 
+  const handleCopy = useCallback(async (value: string, type: "meta" | "link" | "ghost") => {
+    try {
+      await navigator.clipboard.writeText(value);
+      if (type === "meta") {
+        setCopiedMeta(true);
+        window.setTimeout(() => setCopiedMeta(false), 1200);
+      } else if (type === "link") {
+        setCopiedLink(true);
+        window.setTimeout(() => setCopiedLink(false), 1200);
+      } else {
+        setCopiedGhost(true);
+        window.setTimeout(() => setCopiedGhost(false), 1200);
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
+
   if (!isSetup || !stealthMetaAddressHex) {
     return (
       <div className="card max-w-lg mx-auto text-center text-neutral-500">
@@ -41,41 +62,51 @@ export function ReceiveView({ onBack }: { onBack: () => void }) {
     );
   }
 
-  const paymentLink = `opaque.cash/pay/${stealthMetaAddressHex}`;
+  const paymentLink = `${window.location.origin}/pay/${stealthMetaAddressHex}`;
 
   if (mode === "choose") {
     return (
-      <div className="w-full max-w-lg mx-auto">
-        <h2 className="text-lg font-semibold text-white mb-1">Receive</h2>
-        <p className="text-sm text-neutral-500 mb-6">
-          Choose how you want to receive.
-        </p>
-        <div className="space-y-4">
+      <div className="w-full">
+        <div className="mb-8">
+          <h2 className="font-display text-2xl font-bold text-white">Receive</h2>
+          <p className="mt-1 text-sm text-mist">
+            Choose how you want to receive payments privately.
+          </p>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <button
             type="button"
             onClick={() => setMode("payment_link")}
-            className="card w-full text-left hover:border-neutral-600 transition-colors"
+            className="group rounded-2xl border border-ink-700 bg-ink-900/25 p-5 text-left transition-all hover:border-glow/30 hover:bg-ink-900/40 hover:shadow-[0_0_20px_rgba(94,234,212,0.06)]"
           >
-            <span className="text-base font-semibold text-white block mb-1">Payment Link (On-Chain Protocol)</span>
-            <p className="text-sm text-neutral-500">
-              Best for long-term use; recoverable on any device. Your meta-address is published via the registry.
+            <span className="inline-flex items-center rounded-lg bg-glow-muted/30 px-2 py-1 text-[11px] font-medium text-glow mb-3">
+              Recommended
+            </span>
+            <span className="font-display text-base font-bold text-white block mb-1.5">Payment link</span>
+            <p className="text-sm text-mist leading-relaxed">
+              Share your permanent meta-address link. Recovery works across devices once keys are restored.
             </p>
+            <p className="mt-4 text-xs font-medium text-mist/70 transition-colors group-hover:text-glow">Open flow →</p>
           </button>
           <button
             type="button"
             onClick={() => setMode("manual_ghost")}
-            className="card w-full text-left hover:border-neutral-600 transition-colors"
+            className="group rounded-2xl border border-ink-700 bg-ink-900/25 p-5 text-left transition-all hover:border-glow/30 hover:bg-ink-900/40 hover:shadow-[0_0_20px_rgba(94,234,212,0.06)]"
           >
-            <span className="text-base font-semibold text-white block mb-1">Manual Ghost Address (No-Interaction)</span>
-            <p className="text-sm text-neutral-500">
-              Best for one-time fast payments; no on-chain announcement needed. Address is stored locally for monitoring.
+            <span className="inline-flex items-center rounded-lg bg-amber-500/15 px-2 py-1 text-[11px] font-medium text-amber-300 mb-3">
+              One-time
+            </span>
+            <span className="font-display text-base font-bold text-white block mb-1.5">Manual ghost address</span>
+            <p className="text-sm text-mist leading-relaxed">
+              Generate a fast one-time receive address locally without requiring announcer interaction.
             </p>
+            <p className="mt-4 text-xs font-medium text-mist/70 transition-colors group-hover:text-glow">Open flow →</p>
           </button>
         </div>
         <button
           type="button"
           onClick={onBack}
-          className="mt-6 px-4 py-2 rounded-lg text-sm btn-secondary"
+          className="mt-6 rounded-xl border border-ink-600 bg-ink-950/30 px-4 py-2 text-sm font-medium text-mist transition-colors hover:border-glow/30 hover:text-white"
         >
           Back
         </button>
@@ -85,37 +116,39 @@ export function ReceiveView({ onBack }: { onBack: () => void }) {
 
   if (mode === "payment_link") {
     return (
-      <div className="w-full max-w-lg mx-auto">
-        <h2 className="text-lg font-semibold text-white mb-1">Payment Link</h2>
-        <p className="text-sm text-neutral-500 mb-4">
-          Share this link or your meta-address. Senders can use the protocol to send to a one-time stealth address.
+      <div className="w-full">
+        <h2 className="font-display text-xl font-bold text-white mb-1">Payment link</h2>
+        <p className="text-sm text-mist mb-5">
+          Share either your meta-address or link. Senders derive a unique stealth address per payment.
         </p>
-        <div className="p-3 rounded-lg bg-neutral-900 border border-border font-mono text-xs text-neutral-300 break-all mb-2">
-          {stealthMetaAddressHex}
+        <div className="rounded-2xl border border-ink-700 bg-ink-900/25 p-4 mb-3">
+          <p className="text-[11px] uppercase tracking-wider text-mist/70 mb-1">Meta-address</p>
+          <div className="font-mono text-xs text-white/90 break-all">{stealthMetaAddressHex}</div>
         </div>
-        <div className="p-3 rounded-lg bg-neutral-900 border border-border font-mono text-xs text-neutral-400 break-all mb-4">
-          {paymentLink}
+        <div className="rounded-2xl border border-ink-700 bg-ink-900/20 p-4 mb-5">
+          <p className="text-[11px] uppercase tracking-wider text-mist/70 mb-1">Payment link</p>
+          <div className="font-mono text-xs text-mist break-all">{paymentLink}</div>
         </div>
         <div className="flex flex-wrap gap-2">
           <button
             type="button"
-            onClick={() => navigator.clipboard.writeText(stealthMetaAddressHex)}
-            className="px-3 py-1.5 rounded-lg text-sm btn-secondary"
+            onClick={() => handleCopy(stealthMetaAddressHex, "meta")}
+            className="rounded-xl border border-ink-600 bg-ink-950/30 px-3.5 py-2 text-sm font-medium text-mist transition-colors hover:border-glow/30 hover:text-white"
           >
-            Copy meta-address
+            {copiedMeta ? "Copied!" : "Copy meta-address"}
           </button>
           <button
             type="button"
-            onClick={() => navigator.clipboard.writeText(paymentLink)}
-            className="px-3 py-1.5 rounded-lg text-sm btn-secondary"
+            onClick={() => handleCopy(paymentLink, "link")}
+            className="rounded-xl bg-glow px-3.5 py-2 text-sm font-semibold text-ink-950 hover:opacity-90"
           >
-            Copy link
+            {copiedLink ? "Copied!" : "Copy link"}
           </button>
         </div>
         <button
           type="button"
           onClick={() => setMode("choose")}
-          className="mt-6 px-4 py-2 rounded-lg text-sm btn-secondary"
+          className="mt-6 rounded-xl border border-ink-600 bg-ink-950/30 px-4 py-2 text-sm font-medium text-mist transition-colors hover:border-glow/30 hover:text-white"
         >
           Back
         </button>
@@ -141,22 +174,22 @@ export function ReceiveView({ onBack }: { onBack: () => void }) {
         }
       };
       return (
-        <div className="w-full max-w-lg mx-auto">
-          <h2 className="text-lg font-semibold text-white mb-1">Manual Ghost Address</h2>
-          <p className="text-sm text-neutral-500 mb-4">
+        <div className="w-full">
+          <h2 className="font-display text-xl font-bold text-white mb-1">Manual ghost address</h2>
+          <p className="text-sm text-mist mb-5">
             Generate a one-time stealth address. Derivation data is saved locally so the app can monitor and claim incoming funds.
           </p>
           <button
             type="button"
             onClick={generate}
-            className="w-full py-2.5 px-4 rounded-lg text-sm font-medium btn-primary"
+            className="w-full rounded-xl bg-glow px-4 py-3 text-sm font-semibold text-ink-950 hover:opacity-90"
           >
             Generate ghost address
           </button>
           <button
             type="button"
             onClick={() => setMode("choose")}
-            className="mt-4 px-4 py-2 rounded-lg text-sm btn-secondary"
+            className="mt-4 rounded-xl border border-ink-600 bg-ink-950/30 px-4 py-2 text-sm font-medium text-mist transition-colors hover:border-glow/30 hover:text-white"
           >
             Back
           </button>
@@ -165,21 +198,21 @@ export function ReceiveView({ onBack }: { onBack: () => void }) {
     }
 
     return (
-      <div className="w-full max-w-lg mx-auto">
-        <div className="mb-4 px-3 py-2 rounded-lg border border-amber-500/50 bg-amber-500/10">
+      <div className="w-full">
+        <div className="mb-4 px-4 py-3 rounded-2xl border border-amber-500/40 bg-amber-500/10">
           <p className="text-sm font-medium text-amber-200">Manual ghost address</p>
           <p className="text-xs text-amber-200/80 mt-1">
             Because the sender is not using the protocol announcer, this address is only discoverable by this specific browser. Backup your vault to ensure you don&apos;t lose access.
           </p>
         </div>
-        <p className="mb-4 px-3 py-2 rounded-lg border border-neutral-600 bg-neutral-800/50 text-neutral-300 text-sm">
+        <p className="mb-4 px-4 py-3 rounded-2xl border border-ink-700 bg-ink-900/30 text-mist text-sm">
           Receiving from outside Opaque? If you share this 0x address directly, Opaque will track it locally in this browser. To see these funds on other devices, you will need to manually import the address.
         </p>
-        <h2 className="text-lg font-semibold text-white mb-1">Your ghost address</h2>
-        <p className="text-sm text-neutral-500 mb-4">
+        <h2 className="font-display text-xl font-bold text-white mb-1">Your ghost address</h2>
+        <p className="text-sm text-mist mb-4">
           Share this address with the sender. It is stored locally; the app will detect incoming payments.
         </p>
-        <div className="p-4 rounded-lg bg-white inline-block mb-4">
+        <div className="p-4 rounded-2xl bg-white inline-block mb-4">
           <QRCodeCanvas
             ref={qrRef}
             value={ghostResult.stealthAddress}
@@ -190,21 +223,21 @@ export function ReceiveView({ onBack }: { onBack: () => void }) {
             marginSize={2}
           />
         </div>
-        <div className="p-3 rounded-lg bg-neutral-900 border-2 border-amber-500/40 font-mono text-xs text-neutral-300 break-all mb-4">
+        <div className="p-3 rounded-xl bg-ink-900/30 border border-ink-700 font-mono text-xs text-mist break-all mb-4">
           {ghostResult.stealthAddress}
         </div>
         <div className="flex flex-wrap gap-2">
           <button
             type="button"
-            onClick={() => navigator.clipboard.writeText(ghostResult.stealthAddress)}
-            className="px-3 py-1.5 rounded-lg text-sm btn-secondary"
+            onClick={() => handleCopy(ghostResult.stealthAddress, "ghost")}
+            className="rounded-xl bg-glow px-3.5 py-2 text-sm font-semibold text-ink-950 hover:opacity-90"
           >
-            Copy address
+            {copiedGhost ? "Copied!" : "Copy address"}
           </button>
           <button
             type="button"
             onClick={handleDownloadQR}
-            className="px-3 py-1.5 rounded-lg text-sm btn-secondary"
+            className="rounded-xl border border-ink-600 bg-ink-950/30 px-3.5 py-2 text-sm font-medium text-mist transition-colors hover:border-glow/30 hover:text-white"
           >
             Download QR Code
           </button>
@@ -212,7 +245,7 @@ export function ReceiveView({ onBack }: { onBack: () => void }) {
         <button
           type="button"
           onClick={() => setMode("choose")}
-          className="mt-6 px-4 py-2 rounded-lg text-sm btn-secondary"
+          className="mt-6 rounded-xl border border-ink-600 bg-ink-950/30 px-4 py-2 text-sm font-medium text-mist transition-colors hover:border-glow/30 hover:text-white"
         >
           Back
         </button>
