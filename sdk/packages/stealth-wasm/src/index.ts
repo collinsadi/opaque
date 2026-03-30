@@ -196,8 +196,59 @@ export function scanAttestationsJson(
   spendPubkeyBytes: Uint8Array,
 ): string {
   return wasm.scan_attestations_wasm(
-    announcementsJson,
+    coerceAnnouncementsJsonForWasm(announcementsJson),
     viewPrivkeyBytes,
     spendPubkeyBytes,
   );
+}
+
+function coerceAnnouncementsJsonForWasm(input: string): string {
+  // The Rust/WASM scanner expects `ephemeralPubKey` and `metadata` as hex strings (0x...),
+  // but several SDK call sites historically produced JSON with number arrays. Convert
+  // array forms to hex string form for compatibility.
+  try {
+    const v = JSON.parse(input) as unknown;
+    if (!Array.isArray(v)) return input;
+    let changed = false;
+    const out = v.map((row) => {
+      if (!row || typeof row !== "object") return row;
+      const r = row as Record<string, unknown>;
+      const next: Record<string, unknown> = { ...r };
+
+      const eph = r["ephemeralPubKey"];
+      if (Array.isArray(eph)) {
+        next["ephemeralPubKey"] = bytesArrayToHex(eph);
+        changed = true;
+      }
+
+      const meta = r["metadata"];
+      if (Array.isArray(meta)) {
+        next["metadata"] = bytesArrayToHex(meta);
+        changed = true;
+      }
+
+      return next;
+    });
+    return changed ? JSON.stringify(out) : input;
+  } catch {
+    return input;
+  }
+}
+
+function bytesArrayToHex(value: unknown[]): string {
+  let hex = "0x";
+  for (let i = 0; i < value.length; i++) {
+    const n = value[i];
+    const b =
+      typeof n === "number" && Number.isInteger(n) && n >= 0 && n <= 255
+        ? n
+        : null;
+    if (b === null) {
+      // If it isn't a clean byte array, preserve original shape by returning empty hex.
+      // WASM will error with a useful message.
+      return "0x";
+    }
+    hex += b.toString(16).padStart(2, "0");
+  }
+  return hex;
 }
