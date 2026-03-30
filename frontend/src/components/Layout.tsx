@@ -1,11 +1,9 @@
 import { useState, useRef, useEffect, type ReactNode } from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { Footer } from "./Footer";
-import { AddressDisplay } from "./AddressDisplay";
 import { TestnetBanner } from "./TestnetBanner";
 
-export type Tab = "dashboard" | "send" | "receive" | "balance" | "history" | "subens" | "profile" | "reputation";
+export type Tab = "dashboard" | "send" | "receive" | "balance" | "history" | "subens" | "profile" | "reputation" | "faucet";
 
 type LayoutProps = {
   tab: Tab;
@@ -49,32 +47,33 @@ function DesktopNav({
   }, []);
 
   return (
-    <header className="shrink-0 border-b border-border bg-black">
-      <div className="max-w-5xl mx-auto px-6 h-14 flex items-center justify-between">
-        <div className="flex items-center gap-8">
-          {location.pathname === "/" ? (
+    <header className="shrink-0 border-b border-ink-700/60 bg-ink-950/80 backdrop-blur-lg">
+      <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-5 sm:px-8">
+        <div className="flex items-center gap-6">
+          {location.pathname === "/app" ? (
             <Link
-              to="/"
+              to="/app"
               onClick={() => onTabChange("dashboard")}
-              className="text-sm font-semibold tracking-tight text-white hover:text-neutral-300 transition-colors"
+              className="font-display text-base font-bold tracking-tight text-white transition-colors hover:text-glow"
             >
-              Opaque
+              Opaque<span className="text-glow">.</span>
             </Link>
           ) : (
             <button
               type="button"
-              onClick={() => navigate("/", { state: { tab: "dashboard" } })}
-              className="text-sm font-semibold tracking-tight text-white hover:text-neutral-300 transition-colors"
+              onClick={() => navigate("/app", { state: { tab: "dashboard" } })}
+              className="font-display text-base font-bold tracking-tight text-white transition-colors hover:text-glow"
             >
-              Opaque
+              Opaque<span className="text-glow">.</span>
             </button>
           )}
-          <Link
-            to="/faucet"
-            className="text-sm text-neutral-500 hover:text-neutral-300 transition-colors"
+          <button
+            type="button"
+            onClick={() => onTabChange("faucet")}
+            className="text-sm text-mist/80 hover:text-white transition-colors"
           >
             Faucet
-          </Link>
+          </button>
           {navItems.length > 0 && (
             <nav className="flex items-center gap-1">
               {navItems.map(({ id, label }) => (
@@ -82,10 +81,10 @@ function DesktopNav({
                   key={id}
                   type="button"
                   onClick={() => onTabChange(id)}
-                  className={`px-3 py-1.5 rounded-md text-sm transition-colors ${
+                  className={`rounded-lg px-3 py-1.5 text-sm transition-colors ${
                     tab === id
-                      ? "text-white bg-neutral-800"
-                      : "text-neutral-500 hover:text-neutral-300"
+                      ? "bg-glow-muted/25 font-medium text-glow"
+                      : "text-mist/80 hover:text-white"
                   }`}
                 >
                   {label}
@@ -94,13 +93,14 @@ function DesktopNav({
             </nav>
           )}
         </div>
+
         <div className="relative flex items-center gap-3" ref={dropdownRef}>
           {!isConnected && (
             <button
               type="button"
               onClick={onConnect}
               disabled={isConnecting}
-              className="px-4 py-1.5 rounded-md text-sm font-medium bg-white text-black hover:opacity-85 disabled:opacity-40 disabled:cursor-not-allowed transition-opacity"
+              className="rounded-lg bg-glow px-4 py-1.5 text-sm font-semibold text-ink-950 transition-opacity hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
             >
               {isConnecting ? "Connecting…" : "Connect"}
             </button>
@@ -117,64 +117,39 @@ function DesktopNav({
                     setDropdownOpen((o) => !o);
                   }
                 }}
-                className="flex items-center gap-2 px-2 py-1.5 rounded-lg border border-border bg-neutral-900 hover:border-neutral-700 transition-colors cursor-pointer"
+                className="flex items-center gap-2 rounded-xl border border-ink-600 bg-ink-900/60 px-2.5 py-1.5 transition-colors hover:border-ink-600/80 cursor-pointer"
                 data-tour="meta"
               >
                 <img
                   src={`https://robohash.org/${address}`}
                   alt=""
-                  className="w-8 h-8 rounded-full bg-neutral-800"
+                  className="h-7 w-7 rounded-full bg-ink-800"
                 />
-                <span
-                  className="hidden sm:inline"
-                  onClick={(e) => e.stopPropagation()}
-                  role="presentation"
-                >
-                  <AddressDisplay address={address} />
-                </span>
               </div>
               {dropdownOpen && (
-                <div className="absolute right-0 top-full mt-1 py-1 w-48 rounded-lg border border-border bg-neutral-900 shadow-xl z-30">
+                <div className="absolute right-0 top-full mt-1.5 w-52 rounded-xl border border-ink-700 bg-ink-900/95 py-1.5 shadow-2xl backdrop-blur-lg z-30">
+                  {([
+                    { id: "balance" as Tab, label: "Private balance" },
+                    { id: "history" as Tab, label: "Transaction history" },
+                    { id: "profile" as Tab, label: "Profile" },
+                    { id: "subens" as Tab, label: "Setup Sub-ENS" },
+                  ]).map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => { onTabChange(item.id); setDropdownOpen(false); }}
+                      className="w-full px-4 py-2 text-left text-sm text-mist transition-colors hover:bg-ink-800 hover:text-white"
+                    >
+                      {item.label}
+                    </button>
+                  ))}
+                  <div className="my-1 border-t border-ink-700/60" />
                   <button
                     type="button"
-                    onClick={() => { onTabChange("balance"); setDropdownOpen(false); }}
-                    className="w-full text-left px-4 py-2 text-sm text-neutral-300 hover:bg-neutral-800"
+                    onClick={() => { onDisconnect(); setDropdownOpen(false); }}
+                    className="w-full px-4 py-2 text-left text-sm text-mist transition-colors hover:bg-ink-800 hover:text-white"
                   >
-                    Private balance
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => { onTabChange("history"); setDropdownOpen(false); }}
-                    className="w-full text-left px-4 py-2 text-sm text-neutral-300 hover:bg-neutral-800"
-                  >
-                    Transaction history
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => { onTabChange("profile"); setDropdownOpen(false); }}
-                    className="w-full text-left px-4 py-2 text-sm text-neutral-300 hover:bg-neutral-800"
-                  >
-                    Profile
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      onTabChange("subens");
-                      setDropdownOpen(false);
-                    }}
-                    className="w-full text-left px-4 py-2 text-sm text-neutral-300 hover:bg-neutral-800"
-                  >
-                    Setup Sub-ENS
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      onDisconnect();
-                      setDropdownOpen(false);
-                    }}
-                    className="w-full text-left px-4 py-2 text-sm text-neutral-300 hover:bg-neutral-800"
-                  >
-                    Disconnect Wallet
+                    Disconnect
                   </button>
                 </div>
               )}
@@ -188,12 +163,13 @@ function DesktopNav({
 
 const mobileTabs: { id: Tab; label: string; icon: string }[] = [
   { id: "dashboard", label: "Home", icon: "⌂" },
+  { id: "faucet", label: "Faucet", icon: "◈" },
   { id: "profile", label: "Profile", icon: "⚙" },
 ];
 
 function MobileNav({ tab, onTabChange }: Pick<LayoutProps, "tab" | "onTabChange">) {
   return (
-    <nav className="md:hidden fixed bottom-0 left-0 right-0 z-20 bg-black border-t border-border pb-[env(safe-area-inset-bottom)]">
+    <nav className="md:hidden fixed bottom-0 left-0 right-0 z-20 border-t border-ink-700/60 bg-ink-950/80 backdrop-blur-lg pb-[env(safe-area-inset-bottom)]">
       <div className="flex items-center justify-around py-2 px-2">
         {mobileTabs.map(({ id, label, icon }) => {
           const active = tab === id;
@@ -202,8 +178,8 @@ function MobileNav({ tab, onTabChange }: Pick<LayoutProps, "tab" | "onTabChange"
               key={id}
               type="button"
               onClick={() => onTabChange(id)}
-              className={`flex flex-col items-center gap-0.5 py-2 px-4 rounded-lg min-w-[72px] transition-colors ${
-                active ? "text-white" : "text-neutral-600 hover:text-neutral-400"
+              className={`flex flex-col items-center gap-0.5 rounded-lg px-4 py-2 min-w-[72px] transition-colors ${
+                active ? "text-glow" : "text-mist/60 hover:text-white"
               }`}
             >
               <span className="text-lg" aria-hidden>{icon}</span>
@@ -217,7 +193,7 @@ function MobileNav({ tab, onTabChange }: Pick<LayoutProps, "tab" | "onTabChange"
 }
 
 const pageVariants = {
-  initial: { opacity: 0, y: 8 },
+  initial: { opacity: 0, y: 6 },
   animate: { opacity: 1, y: 0 },
   exit: { opacity: 0, y: -4 },
 };
@@ -231,10 +207,11 @@ export function Layout({
   onConnect,
   onDisconnect,
   children,
-  protocolLog,
+  protocolLog: _protocolLog,
 }: LayoutProps) {
   return (
-    <div className="h-screen flex flex-col bg-black">
+    <div className="min-h-dvh flex flex-col bg-ink-950 bg-grid-fade bg-size-grid">
+      {/* ── Fixed header ── */}
       <div className="hidden md:flex flex-col fixed top-0 left-0 right-0 z-20">
         <TestnetBanner isConnected={isConnected} />
         <DesktopNav
@@ -247,16 +224,14 @@ export function Layout({
           onDisconnect={onDisconnect}
         />
       </div>
-
       <div className="md:hidden">
         <TestnetBanner isConnected={isConnected} />
       </div>
 
-      <div className="flex-1 min-h-0 overflow-y-auto pt-8 md:pt-28 pb-20 md:pb-52">
+      {/* ── Content ── */}
+      <div className="flex-1 min-h-0 overflow-y-auto pt-8 md:pt-24 pb-24 md:pb-16">
         <main
-          className={`w-full mx-auto px-4 sm:px-6 pt-8 pb-8 flex-1 flex flex-col min-h-0 ${
-            tab === "balance" ? "max-w-none" : "max-w-2xl"
-          }`}
+          className="mx-auto flex w-full max-w-3xl flex-1 min-h-0 flex-col px-5 sm:px-8 pt-6 pb-8"
         >
           <AnimatePresence mode="wait">
             <motion.div
@@ -273,16 +248,30 @@ export function Layout({
         </main>
       </div>
 
+      {/* ── Mobile nav ── */}
       <MobileNav tab={tab} onTabChange={onTabChange} />
 
-      <footer className="hidden md:flex md:flex-col fixed bottom-0 left-0 right-0 z-10 h-52 border-t border-border bg-black">
-        <div className="shrink-0">
+      {/* ── Collapsible protocol log + footer (commented out per request) ── */}
+      {/*
+      <div className="hidden md:block fixed bottom-0 left-0 right-0 z-10 border-t border-ink-700/60 bg-ink-950/80 backdrop-blur-lg">
+        <div className="mx-auto max-w-6xl">
+          <button
+            type="button"
+            onClick={() => setLogExpanded((p) => !p)}
+            className="flex w-full items-center justify-between px-5 sm:px-8 py-2.5 text-xs text-mist/70 hover:text-white transition-colors"
+          >
+            <span className="font-medium">Protocol log</span>
+            <span>{logExpanded ? "▾ Collapse" : "▸ Expand"}</span>
+          </button>
+          {logExpanded && (
+            <div className="max-h-48 overflow-y-auto border-t border-ink-700/40 px-5 sm:px-8 pb-2">
+              {protocolLog}
+            </div>
+          )}
           <Footer />
         </div>
-        <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
-          {protocolLog}
-        </div>
-      </footer>
+      </div>
+      */}
     </div>
   );
 }
