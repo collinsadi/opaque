@@ -3,6 +3,7 @@ import { getExplorerTxUrl } from "../lib/explorer";
 import { useTxHistoryStore } from "../store/txHistoryStore";
 import type { TxHistoryEntry } from "../store/txHistoryStore";
 import { formatEther } from "viem";
+import { useWallet } from "../hooks/useWallet";
 
 function formatDate(ts: number): string {
   try {
@@ -18,6 +19,7 @@ function typeLabel(kind: TxHistoryEntry["kind"]): string {
     case "sent": return "Sent";
     case "received": return "Received";
     case "ghost": return "Manual";
+    case "trait": return "Trait";
     default: return String(kind);
   }
 }
@@ -30,7 +32,7 @@ function statusFor(entry: TxHistoryEntry): string {
 function TokenBadge({ symbol }: { symbol: string }) {
   return (
     <span
-      className="inline-flex items-center justify-center min-w-9 px-1.5 py-0.5 rounded font-mono text-xs font-medium bg-neutral-800 text-neutral-300 border border-neutral-700"
+      className="inline-flex items-center justify-center min-w-9 px-1.5 py-0.5 rounded-lg font-mono text-xs font-medium bg-ink-900/60 text-mist border border-ink-700"
       title={symbol}
     >
       {symbol}
@@ -43,7 +45,7 @@ function normalizeEntry(raw: unknown, index: number): TxHistoryEntry | null {
   const o = raw as Record<string, unknown>;
   const id = typeof o.id === "string" ? o.id : `tx-fallback-${index}`;
   const chainId = typeof o.chainId === "number" ? o.chainId : getAppChain().id;
-  const kind = o.kind === "sent" || o.kind === "received" || o.kind === "ghost" ? o.kind : "sent";
+  const kind = o.kind === "sent" || o.kind === "received" || o.kind === "ghost" || o.kind === "trait" ? o.kind : "sent";
   const counterparty = typeof o.counterparty === "string" ? o.counterparty : "—";
   const amountWei = typeof o.amountWei === "string" ? o.amountWei : "0";
   const txHash = typeof o.txHash === "string" ? o.txHash : undefined;
@@ -56,13 +58,14 @@ function normalizeEntry(raw: unknown, index: number): TxHistoryEntry | null {
 }
 
 export function TransactionHistoryView() {
-  const chainId = getAppChain().id;
-  const getForChain = useTxHistoryStore((s) => s.getForChain);
+  const { chainId: walletChainId } = useWallet();
+  const chainId = walletChainId ?? getAppChain().id;
+  const byChain = useTxHistoryStore((s) => s.byChain);
   const clear = useTxHistoryStore((s) => s.clear);
 
   let entries: TxHistoryEntry[] = [];
   try {
-    const raw = getForChain(chainId);
+    const raw = byChain[chainId] ?? [];
     const arr = Array.isArray(raw) ? raw : [];
     entries = (arr ?? [])
       .map((item: unknown, i: number) => normalizeEntry(item, i))
@@ -79,48 +82,66 @@ export function TransactionHistoryView() {
   };
 
   return (
-    <div className="w-full max-w-2xl mx-auto">
-      <h2 className="text-lg font-semibold text-white mb-1">Transaction History</h2>
-      <p className="text-sm text-neutral-500 mb-6">
-        Last 50 transactions on this chain (sent, received, manual ghost).
-      </p>
+    <div className="w-full">
+      <div className="mb-8">
+        <h2 className="font-display text-2xl font-bold text-white">History</h2>
+        <p className="mt-1 text-sm text-mist">
+          Last 50 transactions on this network, including private sends, withdrawals, and traits.
+        </p>
+      </div>
 
       {!safeEntries?.length ? (
-        <div className="card">
-          <p className="text-neutral-500 text-sm">No transactions yet.</p>
+        <div className="rounded-3xl border border-ink-700 bg-ink-900/25 p-10 text-center">
+          <div className="text-3xl mb-3" aria-hidden>◈</div>
+          <h3 className="font-display text-lg font-bold text-white mb-1">No history yet</h3>
+          <p className="text-sm text-mist max-w-sm mx-auto">
+            When you send privately, withdraw from stealth addresses, or issue traits, entries will appear here.
+          </p>
         </div>
       ) : (
         <>
-          <ul className="space-y-2">
+          <ul className="space-y-3">
             {safeEntries.map((tx) => (
               <li
                 key={tx?.id ?? `tx-${tx?.timestamp ?? 0}`}
-                className="card py-3 px-4 flex flex-wrap items-center gap-x-4 gap-y-2"
+                className="rounded-2xl border border-ink-700 bg-ink-900/25 p-4 transition-colors hover:border-glow/25"
               >
-                <span className="text-neutral-500 text-sm shrink-0 w-32">
-                  {formatDate(tx.timestamp)}
-                </span>
-                <span
-                  className={`inline-flex px-2 py-0.5 rounded text-xs font-medium shrink-0 ${
-                    tx.kind === "sent"
-                      ? "bg-neutral-700 text-neutral-300"
-                      : tx.kind === "received"
-                        ? "bg-success/10 text-success"
-                        : "bg-neutral-700 text-neutral-400"
-                  }`}
-                >
-                  {typeLabel(tx.kind)}
-                </span>
-                <span className="flex items-center gap-2 text-white font-mono text-sm">
-                  <TokenBadge symbol={tx.tokenSymbol} />
-                  <span>{tx.amount} {tx.tokenSymbol}</span>
-                </span>
-                <span className="text-neutral-500 text-xs shrink-0">
-                  {statusFor(tx)}
-                </span>
-                <span className="text-neutral-400 text-sm truncate max-w-[120px] md:max-w-[200px] ml-auto" title={tx.counterparty ?? ""}>
-                  {tx.counterparty ?? "—"}
-                </span>
+                <div className="flex flex-wrap items-start gap-3">
+                  <span className="text-mist/80 text-xs shrink-0 font-mono">
+                    {formatDate(tx.timestamp)}
+                  </span>
+                  <span
+                    className={`inline-flex px-2 py-0.5 rounded-lg text-[11px] font-medium shrink-0 ${
+                      tx.kind === "sent"
+                        ? "bg-ink-800 text-mist"
+                        : tx.kind === "received"
+                          ? "bg-success/15 text-success"
+                          : tx.kind === "trait"
+                            ? "bg-violet-500/15 text-violet-300"
+                            : "bg-amber-500/15 text-amber-300"
+                    }`}
+                  >
+                    {typeLabel(tx.kind)}
+                  </span>
+                  <span className="text-mist/70 text-xs shrink-0">
+                    {statusFor(tx)}
+                  </span>
+                  <span className="text-mist text-xs truncate min-w-0 ml-auto" title={tx.counterparty ?? ""}>
+                    {tx.counterparty ?? "—"}
+                  </span>
+                </div>
+
+                <div className="mt-3 flex flex-wrap items-center gap-2 text-white">
+                  {tx.kind === "trait" ? (
+                    <span className="text-sm font-medium">{tx.amount}</span>
+                  ) : (
+                    <>
+                      <TokenBadge symbol={tx.tokenSymbol} />
+                      <span className="font-mono text-sm">{tx.amount} {tx.tokenSymbol}</span>
+                    </>
+                  )}
+                </div>
+
                 {tx.txHash && (() => {
                   const explorerUrl = getExplorerTxUrl(tx.chainId, tx.txHash);
                   return explorerUrl ? (
@@ -128,24 +149,23 @@ export function TransactionHistoryView() {
                       href={explorerUrl}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="text-neutral-500 hover:text-neutral-400 text-xs font-mono truncate max-w-[80px] inline-flex items-center gap-1"
+                      className="mt-3 inline-flex items-center gap-1 text-xs text-mist/80 hover:text-white transition-colors"
                       title={tx.txHash}
                     >
-                      Confirmed ↗
+                      View on explorer ↗
                     </a>
-                  ) : (
-                    <span className="text-neutral-500 text-xs">Confirmed</span>
-                  );
+                  ) : null;
                 })()}
               </li>
             ))}
           </ul>
+
           <button
             type="button"
             onClick={handleClear}
-            className="mt-4 px-4 py-2 rounded-lg text-sm btn-secondary"
+            className="mt-5 rounded-xl border border-ink-600 bg-ink-950/30 px-4 py-2 text-sm font-medium text-mist transition-colors hover:border-glow/30 hover:text-white"
           >
-            Clear History
+            Clear history
           </button>
         </>
       )}
