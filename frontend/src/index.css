@@ -1,8 +1,21 @@
 @import "tailwindcss";
 
 @theme {
-  --font-sans: "Inter", "Geist", system-ui, -apple-system, sans-serif;
-  --font-mono: "JetBrains Mono", "Fira Code", "SF Mono", ui-monospace, monospace;
+  --font-display: "Syne", system-ui, sans-serif;
+  --font-sans: "DM Sans", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+
+  /* Docs theme tokens */
+  --color-ink-950: #07080d;
+  --color-ink-900: #0c0e14;
+  --color-ink-800: #13161f;
+  --color-ink-700: #1c2030;
+  --color-ink-600: #2a3145;
+  --color-mist: #94a3b8;
+  --color-glow: #5eead4;
+  --color-glow-dim: #2dd4bf;
+  --color-glow-muted: #134e4a;
+  --color-flare: #f472b6;
 
   --color-black: #000000;
   --color-white: #ffffff;
@@ -18,18 +31,51 @@
   --color-neutral-900: #171717;
   --color-neutral-950: #0a0a0a;
 
-  --color-surface: #0a0a0a;
-  --color-surface-raised: #111111;
-  --color-surface-overlay: #181818;
-  --color-border: #1e1e1e;
-  --color-border-subtle: #141414;
-  --color-border-focus: #333333;
+  /* Map existing "surface" tokens onto docs palette */
+  --color-surface: var(--color-ink-950);
+  --color-surface-raised: var(--color-ink-900);
+  --color-surface-overlay: var(--color-ink-800);
+  --color-border: color-mix(in oklab, var(--color-ink-600) 70%, transparent);
+  --color-border-subtle: color-mix(in oklab, var(--color-ink-600) 55%, transparent);
+  --color-border-focus: color-mix(in oklab, var(--color-glow) 35%, var(--color-ink-600));
 
   --color-accent: #ffffff;
   --color-accent-muted: #a3a3a3;
   --color-success: #22c55e;
   --color-warning: #eab308;
   --color-error: #ef4444;
+}
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+
+  ::selection {
+    background: color-mix(in oklab, var(--color-glow-muted) 85%, transparent);
+    color: var(--color-glow);
+  }
+
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]),
+  a[href],
+  summary {
+    cursor: pointer;
+  }
+}
+
+@layer utilities {
+  .bg-size-grid {
+    background-size: 100% 100%, 48px 48px, 48px 48px;
+  }
+
+  /* Match docs' grid-fade look without needing a Tailwind config */
+  .bg-grid-fade {
+    background-image:
+      linear-gradient(to bottom, transparent 0%, var(--color-ink-950) 100%),
+      linear-gradient(90deg, rgba(94, 234, 212, 0.03) 1px, transparent 1px),
+      linear-gradient(rgba(94, 234, 212, 0.03) 1px, transparent 1px);
+  }
 }
 
 * {
@@ -39,7 +85,7 @@
 body {
   margin: 0;
   min-height: 100vh;
-  background: #000000;
+  background: var(--color-ink-950);
   color: #e5e5e5;
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
@@ -62,8 +108,8 @@ body {
 .card-glass {
   background: linear-gradient(
     135deg,
-    rgba(17, 17, 17, 0.85) 0%,
-    rgba(10, 10, 10, 0.92) 100%
+    color-mix(in oklab, var(--color-ink-900) 88%, transparent) 0%,
+    color-mix(in oklab, var(--color-ink-950) 92%, transparent) 100%
   );
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
@@ -77,8 +123,8 @@ body {
 .banner-glass {
   background: linear-gradient(
     135deg,
-    rgba(17, 17, 17, 0.6) 0%,
-    rgba(10, 10, 10, 0.75) 100%
+    color-mix(in oklab, var(--color-ink-900) 65%, transparent) 0%,
+    color-mix(in oklab, var(--color-ink-950) 78%, transparent) 100%
   );
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
@@ -145,6 +191,10 @@ body {
 
 .font-mono {
   font-family: var(--font-mono);
+}
+
+.font-display {
+  font-family: var(--font-display);
 }
 
 @keyframes scanner-pulse {
