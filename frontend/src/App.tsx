@@ -4,9 +4,9 @@ import { KeysProvider, useKeys } from "./context/KeysContext";
 import { hasCompletedOnboardingTour, runOnboardingTour } from "./lib/onboardingTour";
 import { ProtocolLogProvider } from "./context/ProtocolLogContext";
 import { ToastProvider, useToast } from "./context/ToastContext";
-import { LandingPage } from "./components/LandingPage";
 import { LandingView } from "./components/LandingView";
 import { DashboardView } from "./components/DashboardView";
+import { FaucetPage } from "./components/FaucetPage";
 import { RegistrationWizard } from "./components/RegistrationWizard";
 import { SendView } from "./components/SendView";
 import { PrivateBalanceView } from "./components/PrivateBalanceView";
@@ -27,7 +27,6 @@ import { getExplorerTxUrl } from "./lib/explorer";
 
 function AppContent() {
   const [tab, setTab] = useState<Tab>("dashboard");
-  const [onboardingPhase, setOnboardingPhase] = useState<"landing" | "entry">("landing");
   const [registrationJustCompleted, setRegistrationJustCompleted] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
@@ -44,9 +43,10 @@ function AppContent() {
   }, []);
 
   useEffect(() => {
-    if (location.pathname === "/" && (location.state as { tab?: Tab } | null)?.tab === "dashboard") {
-      setTab("dashboard");
-      navigate("/", { replace: true, state: {} });
+    const requestedTab = (location.state as { tab?: Tab } | null)?.tab;
+    if (location.pathname === "/app" && requestedTab) {
+      setTab(requestedTab);
+      navigate("/app", { replace: true, state: {} });
     }
   }, [location.pathname, location.state, navigate]);
 
@@ -92,6 +92,7 @@ function AppContent() {
 
   const renderView = () => {
     if (tab === "dashboard") return <DashboardView onNavigate={setTab} address={address ?? undefined} chainId={chainId} />;
+    if (tab === "faucet") return <FaucetPage />;
     if (tab === "send") return <SendView />;
     if (tab === "receive") return <ReceiveView onBack={() => setTab("dashboard")} />;
     if (tab === "balance") return <PrivateBalanceView />;
@@ -104,12 +105,8 @@ function AppContent() {
 
   if (!isSetup) {
     return (
-      <div className="min-h-dvh flex flex-col bg-black">
-        {onboardingPhase === "landing" ? (
-          <LandingPage onEnterVault={() => setOnboardingPhase("entry")} />
-        ) : (
-          <LandingView />
-        )}
+      <div className="min-h-dvh flex flex-col bg-ink-950 bg-grid-fade bg-size-grid">
+        <LandingView />
       </div>
     );
   }
@@ -127,8 +124,8 @@ function AppContent() {
         protocolLog={<ProtocolLogPanel />}
       >
         <div className="flex flex-col items-center justify-center min-h-[40vh] gap-4">
-          <div className="w-8 h-8 border-2 border-white/30 border-t-white rounded-full animate-spin" aria-hidden />
-          <p className="text-sm text-neutral-500">Authenticating with Protocol…</p>
+          <span className="h-7 w-7 animate-spin rounded-full border-2 border-ink-600 border-t-glow" aria-hidden />
+          <p className="text-sm text-mist">Authenticating with protocol…</p>
         </div>
       </Layout>
     );
@@ -179,13 +176,13 @@ function ToastLayer() {
   const { toasts, dismiss } = useToast();
   if (toasts.length === 0) return null;
   return (
-    <div className="fixed bottom-24 md:bottom-56 left-4 right-4 md:left-auto md:right-6 z-50 flex flex-col gap-2 max-w-sm md:ml-auto">
+    <div className="fixed bottom-24 md:bottom-16 left-4 right-4 md:left-auto md:right-6 z-50 flex flex-col gap-2 max-w-sm md:ml-auto">
       {toasts.map((t) => {
         const explorerUrl = t.explorerTx ? getExplorerTxUrl(t.explorerTx.chainId, t.explorerTx.txHash) : null;
         return (
           <div
             key={t.id}
-            className="px-4 py-3 rounded-lg bg-neutral-800 border border-neutral-700 text-white text-sm shadow-lg flex flex-wrap items-center justify-between gap-2"
+            className="rounded-xl border border-ink-700 bg-ink-900/95 px-4 py-3 text-sm text-white shadow-2xl backdrop-blur-lg flex flex-wrap items-center justify-between gap-2"
           >
             <span className="min-w-0 flex-1">{t.message}</span>
             <div className="flex items-center gap-2 shrink-0">
@@ -194,16 +191,16 @@ function ToastLayer() {
                   href={explorerUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium bg-neutral-700 hover:bg-neutral-600 text-neutral-200"
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-ink-800 px-2.5 py-1 text-xs font-medium text-mist hover:text-white transition-colors"
                 >
                   <ExternalLinkIcon />
-                  View on Explorer
+                  Explorer
                 </a>
               )}
               <button
                 type="button"
                 onClick={() => dismiss(t.id)}
-                className="text-neutral-400 hover:text-white p-0.5"
+                className="text-mist/60 hover:text-white p-0.5"
                 aria-label="Dismiss"
               >
                 ×
