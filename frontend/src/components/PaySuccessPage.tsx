@@ -23,14 +23,14 @@ export function PaySuccessPage() {
   const explorerUrl = getExplorerTxUrl(chainId, txHash);
 
   return (
-    <div className="min-h-screen bg-black flex flex-col items-center justify-center p-6">
-      <div className="card max-w-md w-full text-center border-neutral-800">
-        <h1 className="text-xl font-semibold text-white mb-2">Transaction Sent</h1>
-        <p className="text-neutral-500 text-sm mb-6">
+    <div className="min-h-screen bg-ink-950 bg-grid-fade bg-size-grid text-white flex flex-col items-center justify-center p-6">
+      <div className="w-full max-w-md rounded-2xl border border-ink-700 bg-ink-900/30 p-6 text-center shadow-2xl backdrop-blur-lg">
+        <h1 className="font-display text-2xl font-bold text-white mb-2">Transaction Sent</h1>
+        <p className="text-mist text-sm mb-6">
           Your private payment was broadcast. The recipient can discover it using their stealth keys.
         </p>
         {txHash && (
-          <div className="mb-6 p-3 rounded-lg bg-neutral-900 border border-border font-mono text-xs text-neutral-400 break-all">
+          <div className="mb-6 p-3 rounded-xl bg-ink-950/50 border border-ink-700 font-mono text-xs text-mist break-all">
             {txHash}
           </div>
         )}
@@ -40,7 +40,7 @@ export function PaySuccessPage() {
               href={explorerUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="w-full py-2.5 px-4 rounded-lg text-sm font-medium btn-secondary text-center inline-flex items-center justify-center gap-2"
+              className="w-full rounded-xl border border-ink-600 bg-ink-950/30 px-4 py-2.5 text-sm font-medium text-mist transition-colors hover:border-glow/30 hover:text-white text-center inline-flex items-center justify-center gap-2"
             >
               <ExternalLinkIcon />
               View on Explorer
@@ -48,10 +48,10 @@ export function PaySuccessPage() {
           )}
           <button
             type="button"
-            onClick={() => navigate("/")}
-            className="w-full py-2.5 px-4 rounded-lg text-sm font-medium btn-primary"
+            onClick={() => navigate("/app")}
+            className="w-full rounded-xl bg-glow px-4 py-2.5 text-sm font-semibold text-ink-950 hover:opacity-90"
           >
-            Return to Home
+            Return to App
           </button>
         </div>
       </div>

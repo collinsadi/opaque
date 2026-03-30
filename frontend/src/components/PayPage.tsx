@@ -327,18 +327,18 @@ export function PayPage() {
   // User Not Found
   if (resolveStatus === "not_found") {
     return (
-      <div className="min-h-screen bg-black flex flex-col items-center justify-center p-6">
-        <div className="card max-w-md w-full text-center border-neutral-800">
-          <h1 className="text-xl font-semibold text-white mb-2">User Not Found</h1>
-          <p className="text-neutral-500 text-sm mb-6">
+      <div className="min-h-screen bg-ink-950 bg-grid-fade bg-size-grid text-white flex flex-col items-center justify-center p-6">
+        <div className="w-full max-w-md rounded-2xl border border-ink-700 bg-ink-900/30 p-6 text-center shadow-2xl backdrop-blur-lg">
+          <h1 className="font-display text-2xl font-bold text-white mb-2">User Not Found</h1>
+          <p className="text-mist text-sm mb-6">
             The identifier could not be resolved to a registered stealth meta-address. It may be invalid or the user may not have registered yet.
           </p>
           <button
             type="button"
-            onClick={() => navigate("/")}
-            className="w-full py-2.5 px-4 rounded-lg text-sm font-medium btn-primary"
+            onClick={() => navigate("/app")}
+            className="w-full rounded-xl bg-glow px-4 py-2.5 text-sm font-semibold text-ink-950 hover:opacity-90"
           >
-            Return to Home
+            Return to App
           </button>
         </div>
       </div>
@@ -347,10 +347,10 @@ export function PayPage() {
 
   if (resolveStatus === "resolving" || resolveStatus === "idle") {
     return (
-      <div className="min-h-screen bg-black flex flex-col items-center justify-center p-6">
+      <div className="min-h-screen bg-ink-950 bg-grid-fade bg-size-grid text-white flex flex-col items-center justify-center p-6">
         <div className="flex flex-col items-center gap-4">
-          <div className="w-8 h-8 border-2 border-white/30 border-t-white rounded-full animate-spin" aria-hidden />
-          <p className="text-sm text-neutral-500">Resolving recipient…</p>
+          <div className="w-8 h-8 border-2 border-ink-600 border-t-glow rounded-full animate-spin" aria-hidden />
+          <p className="text-sm text-mist">Resolving recipient…</p>
         </div>
       </div>
     );
@@ -363,21 +363,21 @@ export function PayPage() {
   const recipientLabel = formatRecipientDisplay(displayName);
 
   return (
-    <div className="min-h-screen bg-black flex flex-col items-center justify-center p-6">
+    <div className="min-h-screen bg-ink-950 bg-grid-fade bg-size-grid text-white flex flex-col items-center justify-center p-6">
       <div className="w-full max-w-md">
         {showConnectPrompt ? (
           /* Default state: unconnected — minimal card, recipient, Encrypted Connection icon, Connect Wallet to Pay */
-          <div className="card-glass text-center">
-            <p className="text-neutral-500 text-sm mb-2">Pay</p>
+          <div className="card-glass text-center border border-ink-700/70">
+            <p className="text-mist text-sm mb-2">Pay</p>
             <p className="text-white font-mono text-lg mb-6 break-all">
               {recipientLabel}
             </p>
             <div className="flex justify-center mb-6" aria-hidden>
               <div
-                className="w-12 h-12 rounded-full border border-white/10 flex items-center justify-center bg-white/5"
+                className="w-12 h-12 rounded-full border border-ink-700 flex items-center justify-center bg-ink-900/40"
                 title="Encrypted Connection"
               >
-                <svg className="w-6 h-6 text-white/70" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                <svg className="w-6 h-6 text-mist" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
                 </svg>
               </div>
@@ -386,7 +386,7 @@ export function PayPage() {
               type="button"
               onClick={() => connect()}
               disabled={isConnecting}
-              className="w-full py-3.5 px-4 rounded-lg text-base font-semibold btn-primary"
+              className="w-full rounded-xl bg-glow px-4 py-3.5 text-base font-semibold text-ink-950 hover:opacity-90 disabled:opacity-50"
             >
               {isConnecting ? "Connecting…" : "Connect Wallet to Pay"}
             </button>
@@ -394,11 +394,11 @@ export function PayPage() {
         ) : (
           /* Post-connection: payment form with asset, amount, Max, Send Privately */
           <>
-            <div className="card-glass space-y-4">
-              <p className="text-neutral-500 text-sm">To</p>
+            <div className="card-glass border border-ink-700/70 space-y-4">
+              <p className="text-mist text-sm">To</p>
               <p className="text-white font-mono text-base break-all">{recipientLabel}</p>
               <div>
-                <label className="block text-sm text-neutral-500 mb-1.5">Asset</label>
+                <label className="block text-sm text-mist mb-1.5">Asset</label>
                 <select
                   value={selectedAsset.symbol}
                   onChange={(e) => {
@@ -413,7 +413,7 @@ export function PayPage() {
                 </select>
               </div>
               <div>
-                <label className="block text-sm text-neutral-500 mb-1.5">Amount ({selectedAsset.symbol})</label>
+                <label className="block text-sm text-mist mb-1.5">Amount ({selectedAsset.symbol})</label>
                 <div className="relative flex rounded-lg shadow-sm">
                   <input
                     type="text"
@@ -426,12 +426,12 @@ export function PayPage() {
                     type="button"
                     onClick={handleMaxAmount}
                     disabled={maxSendableBalance == null || maxSendableBalance === 0n || balanceLoading}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 py-1 px-2 text-xs font-medium text-neutral-400 hover:text-white disabled:opacity-50"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md py-1 px-2 text-xs font-medium text-mist hover:text-white disabled:opacity-50"
                   >
                     MAX
                   </button>
                 </div>
-                {balanceLoading && <p className="mt-1.5 text-neutral-600 text-xs">Loading balance…</p>}
+                {balanceLoading && <p className="mt-1.5 text-mist/70 text-xs">Loading balance…</p>}
                 {isInsufficientBalance && formattedMaxBalance != null && (
                   <p className="mt-1.5 text-red-400 text-xs">
                     Exceeds available balance ({formattedMaxBalance} {selectedAsset.symbol})
@@ -443,7 +443,7 @@ export function PayPage() {
                 type="button"
                 onClick={handleSendPrivately}
                 disabled={sending || !canSend || isInsufficientBalance || !amount.trim()}
-                className={`w-full py-3 px-4 rounded-lg text-sm font-medium btn-primary ${sending ? "loading" : ""}`}
+                className={`w-full rounded-xl bg-glow px-4 py-3 text-sm font-semibold text-ink-950 hover:opacity-90 disabled:opacity-50 ${sending ? "loading" : ""}`}
               >
                 {sending ? "Sending…" : "Send Privately"}
               </button>
@@ -451,10 +451,10 @@ export function PayPage() {
             <p className="mt-4 text-center">
               <button
                 type="button"
-                onClick={() => navigate("/")}
-                className="text-neutral-500 hover:text-neutral-400 text-sm"
+                onClick={() => navigate("/app")}
+                className="text-mist/80 hover:text-white text-sm transition-colors"
               >
-                ← Return to Home
+                ← Return to App
               </button>
             </p>
           </>
