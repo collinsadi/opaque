@@ -156,7 +156,7 @@ type AppStep = "landing" | "verify" | "unlocked" | "voted";
 
 export default function App() {
   const [step, setStep] = useState<AppStep>("landing");
-  const [showVerifyModal, setShowVerifyModal] = useState(false);
+  const [, setShowVerifyModal] = useState(false);
   const [isVerified, setIsVerified] = useState(false);
   const [proofText, setProofText] = useState("");
   const [isDragging, setIsDragging] = useState(false);
