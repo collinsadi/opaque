@@ -86,7 +86,7 @@ export function LandingPage({ onEnterVault }: LandingPageProps) {
         </span>
 
         <h1 className="relative font-display text-5xl sm:text-6xl md:text-7xl font-extrabold tracking-tight leading-[1.05]">
-          Private payments
+          Privacy protocol
           <br />
           <span className="text-mist">on Ethereum</span>
           <span className="text-glow">.</span>
